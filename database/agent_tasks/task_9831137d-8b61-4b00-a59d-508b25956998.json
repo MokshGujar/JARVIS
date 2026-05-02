@@ -1,0 +1,26 @@
+{
+  "task_id": "9831137d-8b61-4b00-a59d-508b25956998",
+  "session_id": "b462e89b-e9c5-4e72-8a64-5c279d4fa295",
+  "user_message": "hello Jarvis",
+  "route": "general_chat",
+  "status": "completed",
+  "created_at": 1775136578.2187939,
+  "updated_at": 1775136579.0809157,
+  "final_response": "Hello, Moksh. How can I assist you today?",
+  "steps": [
+    {
+      "step_id": "f190ce99",
+      "tool_name": "general_chat",
+      "description": "Answer with the general_chat tool.",
+      "safety_level": "safe",
+      "input": {
+        "message": "hello Jarvis",
+        "reasoning": "Matched fast local general heuristic",
+        "elapsed_ms": 0
+      },
+      "status": "completed",
+      "output_summary": "Answered from knowledge and memory.",
+      "approval_id": ""
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "session_id": "362c2e29-a6c9-4bbc-aad3-7fc9eed87e7c",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello Jarvis, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm doing well, thanks for asking. I'm ready to help you with any questions or tasks you may have, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test Jarvis on desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "test Jarvis created at C:\\Users\\ASUS\\Desktop\\test Jarvis."
+    },
+    {
+      "role": "user",
+      "content": "In that file add Hello Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "I've added the text \"Hello Jarvis\" to the file test Jarvis on your desktop."
+    },
+    {
+      "role": "user",
+      "content": "Delete the file test jars."
+    },
+    {
+      "role": "assistant",
+      "content": "test jars does not exist."
+    },
+    {
+      "role": "user",
+      "content": "Delete the file. Test Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Automation supports opening and closing apps, play and search commands, system volume controls, and creating, editing, moving, renaming, and deleting files or folders across your laptop except protected system locations."
+    }
+  ]
+}

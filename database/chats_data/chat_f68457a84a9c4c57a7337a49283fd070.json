@@ -1,0 +1,45 @@
+{
+  "session_id": "f68457a8-4a9c-4c57-a733-7a49283fd070",
+  "messages": [
+    {
+      "role": "user",
+      "content": "what did suhani said yo you?"
+    },
+    {
+      "role": "assistant",
+      "content": "Suhani told me that she is Moksh's girlfriend and asked when he would marry her, but I didn't have any information about Moksh's personal plans or timelines."
+    },
+    {
+      "role": "user",
+      "content": "who is your owner?"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh is the one I assist, Sir."
+    },
+    {
+      "role": "user",
+      "content": "what else she asked you?"
+    },
+    {
+      "role": "assistant",
+      "content": "Suhani also asked me about Moksh's Gmail address, Instagram handle, and Snapchat ID, and I provided her with the information I had, which included his Gmail address and Instagram handle."
+    },
+    {
+      "role": "user",
+      "content": "why are you saying Moksh, you can say your(i am Moksh and you are taliking to me)"
+    },
+    {
+      "role": "assistant",
+      "content": "You're right, I can address you directly. Suhani asked me about your Gmail address, Instagram handle, and Snapchat ID, and I provided her with the information I had. She also asked me to tell her more about you, and later asked when you would marry her."
+    },
+    {
+      "role": "user",
+      "content": "i'll marry her soon in the future"
+    },
+    {
+      "role": "assistant",
+      "content": "I'll keep that in mind. Suhani will likely be happy to hear that you're planning to marry her soon."
+    }
+  ]
+}

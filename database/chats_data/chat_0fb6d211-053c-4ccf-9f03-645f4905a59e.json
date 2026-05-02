@@ -1,0 +1,77 @@
+{
+  "session_id": "0fb6d211-053c-4ccf-9f03-645f4905a59e",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello Jarvis, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm doing well, thanks for asking. It's nice to chat with you again, what's on your mind today?"
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Do you want me to open chrome as the app or the website?"
+    },
+    {
+      "role": "user",
+      "content": "Open app."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening chrome."
+    },
+    {
+      "role": "user",
+      "content": "To close Chrome and open the website."
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened Chrome for you."
+    },
+    {
+      "role": "user",
+      "content": "Close Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Closing Chrome."
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome website."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening the Chrome website."
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome and."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening Chrome and."
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Do you want me to open chrome as the app or the website?"
+    },
+    {
+      "role": "user",
+      "content": "App."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening Chrome."
+    }
+  ]
+}

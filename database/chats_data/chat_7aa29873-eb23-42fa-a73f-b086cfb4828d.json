@@ -1,0 +1,117 @@
+{
+  "session_id": "7aa29873-eb23-42fa-a73f-b086cfb4828d",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Evening, Sir. How can I help you tonight?"
+    },
+    {
+      "role": "user",
+      "content": "Come on, WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Call mom on WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Call mom on WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "I couldn't find mom in your contacts."
+    },
+    {
+      "role": "user",
+      "content": "Call Hitanshi India on WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "I couldn't find Hitanshi India in your contacts."
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Do you want me to open chrome as the app or the website?"
+    },
+    {
+      "role": "user",
+      "content": "Open the app."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening chrome. What should I search in Chrome?"
+    },
+    {
+      "role": "user",
+      "content": "Search about the current affairs happening right now."
+    },
+    {
+      "role": "assistant",
+      "content": "Searching Google for the current affairs happening right now. in chrome."
+    },
+    {
+      "role": "user",
+      "content": "Show system status"
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "Search files"
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Search files"
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Search files"
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Search files"
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    }
+  ]
+}

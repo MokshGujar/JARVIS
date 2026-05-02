@@ -1,0 +1,2 @@
+vector_store_preload = false
+canonical_frontend_actions = false

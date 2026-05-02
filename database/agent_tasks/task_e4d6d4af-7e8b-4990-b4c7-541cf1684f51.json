@@ -1,0 +1,26 @@
+{
+  "task_id": "e4d6d4af-7e8b-4990-b4c7-541cf1684f51",
+  "session_id": "caaed45e-d80e-4434-b13f-4261a333f118",
+  "user_message": "Tuani on WhatsApp.",
+  "route": "realtime_chat",
+  "status": "completed",
+  "created_at": 1775136793.760959,
+  "updated_at": 1775136799.9290633,
+  "final_response": "I found information on a person named Tuani Basotti, who is a model known for her leaked nude photos and videos, and is also active on OnlyFans, but I couldn't find any specific information about a person named Tuani on WhatsApp.",
+  "steps": [
+    {
+      "step_id": "e3dd02b0",
+      "tool_name": "realtime_chat",
+      "description": "Answer with the realtime_chat tool.",
+      "safety_level": "safe",
+      "input": {
+        "message": "Tuani on WhatsApp.",
+        "reasoning": "Needs live web search",
+        "elapsed_ms": 395
+      },
+      "status": "completed",
+      "output_summary": "Answered with live web search.",
+      "approval_id": ""
+    }
+  ]
+}

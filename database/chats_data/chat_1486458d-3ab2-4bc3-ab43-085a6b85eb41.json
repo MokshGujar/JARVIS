@@ -1,0 +1,37 @@
+{
+  "session_id": "1486458d-3ab2-4bc3-ab43-085a6b85eb41",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello Jarvis open Chrome"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. I'm opening Chrome for you."
+    },
+    {
+      "role": "user",
+      "content": "open Microsoft edge"
+    },
+    {
+      "role": "assistant",
+      "content": "Opening Microsoft edge."
+    },
+    {
+      "role": "user",
+      "content": "close File Explorer"
+    },
+    {
+      "role": "assistant",
+      "content": "Closing File Explorer."
+    },
+    {
+      "role": "user",
+      "content": "open file explorer"
+    },
+    {
+      "role": "assistant",
+      "content": "Opening file explorer."
+    }
+  ]
+}

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#03070b">
+    <title>J.A.R.V.I.S</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=7">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/hud/hud-textures.css?v=7">
+    <link rel="stylesheet" href="assets/hud/hud-effects.css?v=7">
+    <link rel="stylesheet" href="style.css?v=7">
+</head>
+<body>
+    <div class="app">
+        <div class="dom-contract" aria-hidden="true">
+            <button id="btn-jarvis" type="button" tabindex="-1"></button>
+            <button id="btn-general" type="button" tabindex="-1"></button>
+            <button id="btn-realtime" type="button" tabindex="-1"></button>
+            <button id="mode-prev" type="button" tabindex="-1"></button>
+            <div id="mode-switch"><span id="mode-slider"></span></div>
+            <button id="mode-next" type="button" tabindex="-1"></button>
+            <button id="vision-toggle-btn" type="button" tabindex="-1"></button>
+        </div>
+
+        <aside class="local-system-panel hud-frame">
+            <section class="local-brand">
+                <div id="orb-container" aria-hidden="true"></div>
+                <div class="local-brand-copy">
+                    <h2>JARVIS</h2>
+                    <strong>LOCAL SYSTEM</strong>
+                    <p>Monitoring your computer in real time</p>
+                </div>
+            </section>
+
+            <section class="local-metric metric-wide" data-metric="health">
+                <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/><path d="M4 12h4l2-4 4 8 2-4h4"/></svg></div>
+                <div class="metric-copy">
+                    <span class="metric-title">System Health</span>
+                    <strong data-metric-value="health">Unavailable</strong>
+                    <em data-metric-sub="health">Waiting for metrics</em>
+                </div>
+                <div class="sparkline" data-metric-graph="health"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </section>
+
+            <section class="local-metric metric-wide" data-metric="cpu">
+                <div class="mini-ring" data-ring="cpu" style="--value:0"><span data-metric-value="cpu">--</span></div>
+                <div class="metric-copy">
+                    <span class="metric-title">CPU Usage</span>
+                    <strong data-metric-main="cpu">Unavailable</strong>
+                    <em data-metric-sub="cpu">Cores unavailable</em>
+                </div>
+                <div class="sparkline" data-metric-graph="cpu"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </section>
+
+            <section class="local-metric metric-wide" data-metric="memory">
+                <div class="mini-ring memory" data-ring="memory" style="--value:0"><span data-metric-value="memory">--</span></div>
+                <div class="metric-copy">
+                    <span class="metric-title">Memory Usage</span>
+                    <strong data-metric-main="memory">Unavailable</strong>
+                    <em data-metric-sub="memory">RAM unavailable</em>
+                </div>
+                <div class="sparkline" data-metric-graph="memory"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </section>
+
+            <section class="local-metric metric-wide" data-metric="storage">
+                <div class="metric-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M7 15h10"/><path d="M8 8h8"/><path d="M8 12h8"/></svg></div>
+                <div class="metric-copy">
+                    <span class="metric-title">Storage</span>
+                    <strong data-metric-main="storage">Unavailable</strong>
+                    <em data-metric-sub="storage">Disk unavailable</em>
+                    <div class="metric-bar"><i data-metric-bar="storage" style="width:0%"></i></div>
+                </div>
+                <div class="sparkline" data-metric-graph="storage"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </section>
+
+            <section class="local-metric metric-wide" data-metric="network">
+                <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M12 20h.01"/></svg></div>
+                <div class="metric-copy">
+                    <span class="metric-title">Network</span>
+                    <strong data-metric-main="network">Measuring</strong>
+                    <em data-metric-sub="network">Connection unknown</em>
+                </div>
+                <div class="network-mini">
+                    <span>&darr; <b data-network-down>--</b></span>
+                    <span>&uarr; <b data-network-up>--</b></span>
+                </div>
+            </section>
+
+            <div class="metric-grid">
+                <section class="local-metric" data-metric="battery">
+                    <div class="metric-icon"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M10 1h4"/><path d="M10 17h4"/></svg></div>
+                    <div class="metric-copy">
+                        <span class="metric-title">Battery / Power</span>
+                        <strong data-metric-main="battery">Unavailable</strong>
+                        <em data-metric-sub="battery">Power unknown</em>
+                    </div>
+                </section>
+                <section class="local-metric" data-metric="temperature">
+                    <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0Z"/></svg></div>
+                    <div class="metric-copy">
+                        <span class="metric-title">Temperature</span>
+                        <strong data-metric-main="temperature">Unavailable</strong>
+                        <em data-metric-sub="temperature">Sensor unavailable</em>
+                    </div>
+                </section>
+                <section class="local-metric" data-metric="protection">
+                    <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg></div>
+                    <div class="metric-copy">
+                        <span class="metric-title">Protection</span>
+                        <strong data-metric-main="protection">Unknown</strong>
+                        <em data-metric-sub="protection">Status unknown</em>
+                    </div>
+                </section>
+                <section class="local-metric" data-metric="connection">
+                    <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 12h4"/><path d="M16 12h4"/><path d="M8 12a4 4 0 0 1 8 0"/><path d="M12 16h.01"/></svg></div>
+                    <div class="metric-copy">
+                        <span class="metric-title">Connection</span>
+                        <strong data-metric-main="connection">Unknown</strong>
+                        <em data-metric-sub="connection">Checking</em>
+                    </div>
+                </section>
+            </div>
+
+            <div class="metric-footnote">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>
+                <span>All metrics are from this computer</span>
+            </div>
+        </aside>
+
+        <main class="command-dashboard" id="chat-area">
+            <header class="top-bar glass-panel">
+                <div class="top-bar-frame" aria-hidden="true"></div>
+                <div class="top-left">
+                    <button class="btn-icon activity-toggle" id="activity-toggle" title="View activity flow" aria-label="View activity flow">
+                        <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+                    </button>
+                    <span class="single-mode-chip">JARVIS</span>
+                </div>
+                <h1 class="logo">JARVIS</h1>
+                <div class="top-right">
+                    <div class="status-badge" id="status-badge"><span class="status-dot"></span><span class="status-text">ONLINE</span></div>
+                    <span class="hud-time" id="hud-time">--:--:--</span>
+                    <button class="btn-icon search-results-toggle" id="search-results-toggle" title="View search results" aria-label="View search results" style="display: none;"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+                    <button class="btn-icon notification-btn" type="button" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>
+                    <button class="btn-icon settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M12 2v3"/><path d="M12 19v3"/><path d="m4.93 4.93 2.12 2.12"/><path d="m16.95 16.95 2.12 2.12"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="m4.93 19.07 2.12-2.12"/><path d="m16.95 7.05 2.12-2.12"/><circle cx="12" cy="12" r="4"/></svg></button>
+                </div>
+            </header>
+
+            <section class="core-hero" aria-label="Jarvis core activity">
+                <div class="core-reticle" aria-hidden="true"></div>
+                <div class="jarvis-core-visual" id="jarvis-core-visual" data-state="idle">
+                    <div class="core-reactor-shell" aria-hidden="true">
+                        <div class="arc-reactor core-arc-reactor">
+                            <div class="reactor-particles"></div>
+                            <div class="reactor-layer reactor-ticks"></div>
+                            <div class="reactor-layer reactor-outer"></div>
+                            <div class="reactor-layer reactor-middle"></div>
+                            <div class="reactor-layer reactor-inner"></div>
+                            <div class="reactor-core"></div>
+                            <div class="reactor-triangle"></div>
+                        </div>
+                    </div>
+                    <span class="core-label">JARVIS CORE</span>
+                    <div class="core-waveform" id="core-waveform" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="main-panel hud-frame main-chat-frame">
+                <div class="chat-terminal-header">
+                    <span>JARVIS</span>
+                    <i></i>
+                </div>
+                <div class="chat-messages" id="chat-messages">
+                    <div class="welcome-screen" id="welcome-screen" aria-hidden="true"></div>
+                </div>
+
+                <div class="quick-actions">
+                    <button class="chip" data-msg="Open calculator">Open Calculator</button>
+                    <button class="chip" data-msg="Search files">Search Files</button>
+                    <button class="chip" data-msg="Show system status">System Status</button>
+                    <button class="chip" data-msg="Open calendar">Open Calendar</button>
+                    <button class="chip" data-msg="Give me a news update">News Update</button>
+                </div>
+
+                <footer class="input-bar hud-frame input-frame">
+                    <div class="input-wrapper">
+                        <textarea id="message-input" placeholder="Ask Jarvis anything..." rows="1" maxlength="32000"></textarea>
+                        <div class="input-actions">
+                            <button class="action-btn camera-btn" id="btn-camera" title="Open camera preview" aria-label="Open camera preview"><svg viewBox="0 0 24 24"><path d="M4 8h4l2-3h4l2 3h4v11H4z"/><circle cx="12" cy="13" r="3"/></svg></button>
+                            <button class="action-btn screen-btn" id="btn-screen" title="Open screen preview" aria-label="Open screen preview"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg></button>
+                            <button class="action-btn mic-btn" id="mic-btn" title="Voice input - click to start auto-listen" aria-label="Voice input">
+                                <svg class="mic-icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/><path d="M8 22h8"/></svg>
+                                <svg class="mic-icon-active" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>
+                            </button>
+                            <button class="action-btn tts-btn" id="tts-btn" title="Text to speech" aria-label="Text to speech">
+                                <svg class="tts-icon-off" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+                                <svg class="tts-icon-on" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+                            </button>
+                            <button class="action-btn send-btn" id="send-btn" title="Send message" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button>
+                        </div>
+                    </div>
+                    <div class="input-meta" id="input-meta"><span class="char-count" id="char-count"></span></div>
+                </footer>
+
+                <div class="permission-banner hud-frame">
+                    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg>
+                    <span>Permission-required tasks are verified automatically with face recognition on this device</span>
+                    <strong>FACE AUTH: ACTIVE</strong>
+                </div>
+            </section>
+        </main>
+
+        <aside class="right-panel">
+            <section class="side-panel hud-frame panel-frame">
+                <div class="panel-header"><span>System Status</span><i></i></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>Power</span><b data-side-power>Unknown</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0Z"/></svg>Temperature</span><b data-side-temperature>Unavailable</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>Protection</span><b class="success" data-side-protection>Unknown</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M12 20h.01"/></svg>Connection</span><b class="success" data-side-connection>Unknown</b></div>
+            </section>
+
+            <section class="side-panel hud-frame panel-frame">
+                <div class="panel-header"><span>Active Modules</span><i></i></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>Voice Recognition</span><b class="success">Active</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>Face Recognition</span><b class="success">Active</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 3 5-7"/></svg>System Monitor</span><b class="success">Active</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>File Assistant</span><b class="success">Active</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Web Search</span><b class="success">Active</b></div>
+            </section>
+
+            <section class="side-panel hud-frame panel-frame">
+                <div class="panel-header"><span>Quick Commands</span><i></i></div>
+                <div class="command-grid">
+                    <button class="chip" data-msg="Lock system">Lock System</button>
+                    <button class="chip" data-msg="Clear memory">Clear Memory</button>
+                    <button class="chip" data-msg="Optimize system">Optimize System</button>
+                    <button class="chip" data-msg="Run diagnostics">Run Diagnostics</button>
+                    <button class="chip" data-msg="Check updates">Check Updates</button>
+                    <button class="chip" data-msg="Shut down">Shut Down</button>
+                </div>
+            </section>
+
+            <section class="side-panel security-panel hud-frame panel-frame">
+                <div class="panel-header"><span>Security &amp; Authentication</span><i></i></div>
+                <div class="security-body">
+                    <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>
+                    <div>
+                        <strong>Face Recognition: Active</strong>
+                        <p>Permission-required tasks are verified automatically</p>
+                    </div>
+                </div>
+                <button class="security-action" type="button">Manage Security</button>
+            </section>
+        </aside>
+
+        <section class="vision-panel" id="vision-panel" hidden aria-hidden="true">
+            <div class="vision-panel-title" id="vision-panel-title">Vision Mode</div>
+            <span class="vision-status-badge is-idle" id="vision-status-badge">Idle</span>
+            <span class="vision-status-text" id="vision-status-text">Vision access is off.</span>
+            <button class="vision-action-btn" id="vision-capture-btn" type="button">Capture</button>
+            <div class="vision-presets" id="vision-presets">
+                <button class="vision-chip" data-vision-prompt="Read all visible text and important UI elements in a structured way.">Read Text</button>
+                <button class="vision-chip" data-vision-prompt="Summarize this screen, including the main app, visible sections, and what I can do next.">Summarize Screen</button>
+                <button class="vision-chip" data-vision-prompt="Identify the main objects and important details in this image.">Identify Objects</button>
+                <button class="vision-chip" data-vision-prompt="Describe this scene clearly and briefly.">Describe Scene</button>
+            </div>
+            <video id="vision-video" class="vision-video" autoplay playsinline muted hidden></video>
+            <img id="vision-preview" class="vision-preview" alt="Vision preview" hidden>
+            <div class="vision-placeholder" id="vision-placeholder">Capture your screen or camera frame for Jarvis inspection.</div>
+        </section>
+
+        <aside class="floating-preview camera-preview hud-frame" id="camera-preview-panel" hidden aria-hidden="true">
+            <div class="floating-preview-header"><span>CAMERA • LIVE</span><button class="preview-close" id="camera-preview-close" type="button" aria-label="Close camera preview">×</button></div>
+            <div class="floating-preview-body" id="camera-preview-body"><div class="face-overlay" aria-hidden="true"></div></div>
+            <div class="floating-preview-footer"><span class="success-dot"></span><span>Face Auth: <b>Active</b></span><em>1080p • 30fps</em></div>
+        </aside>
+
+        <aside class="floating-preview screen-preview hud-frame" id="screen-preview-panel" hidden aria-hidden="true">
+            <div class="floating-preview-header"><span>SCREEN • LIVE</span><button class="preview-close" id="screen-preview-close" type="button" aria-label="Close screen preview">×</button></div>
+            <div class="floating-preview-body" id="screen-preview-body"></div>
+            <div class="floating-preview-footer"><span class="success-dot"></span><span>Screen share active</span><em id="screen-preview-kind">Live</em></div>
+        </aside>
+
+        <aside class="activity-panel glass-panel hud-frame panel-frame" id="activity-panel" aria-hidden="true">
+            <div class="activity-header"><h3 class="activity-title">Activity</h3><button class="activity-close" id="activity-close" title="Close" aria-label="Close activity panel"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+            <div class="activity-list" id="activity-list"><div class="activity-empty" id="activity-empty">Send a message to see the flow here.</div></div>
+        </aside>
+
+        <aside class="search-results-widget glass-panel hud-frame panel-frame" id="search-results-widget" aria-hidden="true">
+            <div class="search-results-header"><h3 class="search-results-title">Live Search</h3><button class="search-results-close" id="search-results-close" title="Close" aria-label="Close search results"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+            <div class="search-results-query" id="search-results-query"></div>
+            <div class="search-results-answer" id="search-results-answer"></div>
+            <div class="search-results-list" id="search-results-list"></div>
+        </aside>
+
+        <div class="settings-panel glass-panel hud-frame panel-frame" id="settings-panel" aria-hidden="true">
+            <div class="settings-header"><h3 class="settings-title">Settings</h3><button class="settings-close btn-icon" id="settings-close" title="Close" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+            <div class="settings-body">
+                <div class="settings-item"><label class="settings-label" for="toggle-auto-activity">Auto-open activity panel</label><label class="toggle-switch"><input type="checkbox" id="toggle-auto-activity" checked><span class="toggle-slider"></span></label></div>
+                <div class="settings-item"><label class="settings-label" for="toggle-auto-search">Auto-open search results</label><label class="toggle-switch"><input type="checkbox" id="toggle-auto-search" checked><span class="toggle-slider"></span></label></div>
+                <div class="settings-item"><label class="settings-label" for="toggle-thinking-sounds">Thinking sound effects</label><label class="toggle-switch"><input type="checkbox" id="toggle-thinking-sounds" checked><span class="toggle-slider"></span></label></div>
+                <div class="settings-item settings-item-stack">
+                    <label class="settings-label">Face authentication</label>
+                    <p class="settings-hint inline" id="face-auth-status">No face profile enrolled.</p>
+                    <button class="settings-action-btn" id="verify-face-btn" type="button">Verify face</button>
+                    <button class="settings-action-btn" id="enroll-face-btn" type="button">Enroll face</button>
+                    <button class="settings-action-btn secondary" id="clear-face-profile-btn" type="button">Clear face profile</button>
+                </div>
+                <p class="settings-hint">Activity, search, speech, vision, and face verification keep their existing backend routes.</p>
+            </div>
+        </div>
+
+        <div class="panel-overlay" id="panel-overlay" aria-hidden="true"></div>
+        <div class="speech-widget" id="speech-widget" aria-hidden="true">
+            <div class="speech-widget-inner"><span class="speech-widget-label">Listening...</span><span class="speech-widget-text" id="speech-widget-text"></span></div>
+        </div>
+        <div class="toast-container" id="toast-container" aria-live="polite"></div>
+    </div>
+    <script src="orb.js?v=7"></script>
+    <script src="script.js?v=7"></script>
+</body>
+</html>

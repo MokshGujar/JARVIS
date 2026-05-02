@@ -1,0 +1,45 @@
+{
+  "session_id": "0ed36860-e83d-4997-bb26-dae097aff2a8",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Open Chrome, open YouTube, open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening Chrome. Opening YouTube. Opening ChatGPT."
+    },
+    {
+      "role": "user",
+      "content": "Close WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "Closing WhatsApp."
+    },
+    {
+      "role": "user",
+      "content": "Close Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Closing Chrome."
+    },
+    {
+      "role": "user",
+      "content": "Whose call I just got?"
+    },
+    {
+      "role": "assistant",
+      "content": "The identity of the caller is unknown. It's best to verify the number if you're curious. Always prioritize your safety."
+    },
+    {
+      "role": "user",
+      "content": "Your incoming."
+    },
+    {
+      "role": "assistant",
+      "content": "To write about an incoming job on a resume, list the job title and company name, and be prepared to discuss it in an interview. An incoming mail server hostname is needed to configure email clients, and Melio allows tracking of incoming payments via email or the Get Paid section."
+    }
+  ]
+}

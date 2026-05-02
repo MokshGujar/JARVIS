@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#050510">
+    <title>J.A.R.V.I.S Face Enrollment</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg?v=5">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@300;400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/app/style.css?v=5">
+    <link rel="stylesheet" href="/enroll/enroll.css">
+</head>
+<body>
+    <div class="enroll-app enroll-state-idle" id="enroll-app">
+        <div class="enroll-bg-grid" aria-hidden="true"></div>
+        <div class="enroll-bg-radial" aria-hidden="true"></div>
+        <div class="enroll-hud-frame" aria-hidden="true"></div>
+        <div class="enroll-shell">
+            <header class="enroll-top">
+                <div class="enroll-title-block">
+                    <div class="enroll-eyebrow">FACE ENROLLMENT SYSTEM</div>
+                    <h1 class="enroll-title">JARVIS</h1>
+                    <p class="enroll-subtitle">Secure face profile acquisition</p>
+                </div>
+                <div class="enroll-top-meta">
+                    <div class="enroll-meta-pill">
+                        <span class="enroll-meta-dot"></span>
+                        <span id="top-status-label">INITIALIZING</span>
+                    </div>
+                </div>
+            </header>
+
+            <main class="enroll-main">
+                <section class="enroll-side enroll-left">
+                    <div class="enroll-panel-label">Enrollment Progress</div>
+                    <div class="enroll-step-list">
+                        <div class="enroll-step" data-step="camera-online">
+                            <span class="enroll-step-icon" data-icon="camera"></span>
+                            <span class="enroll-step-copy">
+                                <span class="enroll-step-text">Camera online</span>
+                                <span class="enroll-step-subtitle">Video feed active</span>
+                            </span>
+                            <span class="enroll-step-dot"></span>
+                        </div>
+                        <div class="enroll-step" data-step="face-detected">
+                            <span class="enroll-step-icon" data-icon="face"></span>
+                            <span class="enroll-step-copy">
+                                <span class="enroll-step-text">Face detected</span>
+                                <span class="enroll-step-subtitle">Face found in frame</span>
+                            </span>
+                            <span class="enroll-step-dot"></span>
+                        </div>
+                        <div class="enroll-step" data-step="quality-check">
+                            <span class="enroll-step-icon" data-icon="wave"></span>
+                            <span class="enroll-step-copy">
+                                <span class="enroll-step-text">Quality passed</span>
+                                <span class="enroll-step-subtitle">Image quality optimal</span>
+                            </span>
+                            <span class="enroll-step-dot"></span>
+                        </div>
+                        <div class="enroll-step" data-step="liveness-check">
+                            <span class="enroll-step-icon" data-icon="shield"></span>
+                            <span class="enroll-step-copy">
+                                <span class="enroll-step-text">Liveness passed</span>
+                                <span class="enroll-step-subtitle">Liveness verified</span>
+                            </span>
+                            <span class="enroll-step-dot"></span>
+                        </div>
+                        <div class="enroll-step" data-step="sample-accepted">
+                            <span class="enroll-step-icon" data-icon="profile"></span>
+                            <span class="enroll-step-copy">
+                                <span class="enroll-step-text">Sample accepted</span>
+                                <span class="enroll-step-subtitle">Profile sample stored</span>
+                            </span>
+                            <span class="enroll-step-dot"></span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="enroll-core">
+                    <div class="enroll-reactor-shell">
+                        <canvas class="enroll-reactor-canvas" id="reactor-canvas" aria-hidden="true"></canvas>
+                        <div class="enroll-camera-shell">
+                            <svg class="enroll-progress-ring" viewBox="0 0 120 120" aria-hidden="true">
+                                <circle class="enroll-progress-ring-track" cx="60" cy="60" r="54"></circle>
+                                <circle class="enroll-progress-ring-value" id="progress-ring-value" cx="60" cy="60" r="54"></circle>
+                            </svg>
+                            <div class="enroll-camera-ring"></div>
+                            <div class="enroll-camera-mask">
+                                <video id="camera-video" class="enroll-camera-video" autoplay muted playsinline></video>
+                                <div class="enroll-camera-vignette" aria-hidden="true"></div>
+                            </div>
+                            <div class="enroll-targeting" aria-hidden="true">
+                                <span class="enroll-bracket enroll-bracket-tl"></span>
+                                <span class="enroll-bracket enroll-bracket-tr"></span>
+                                <span class="enroll-bracket enroll-bracket-bl"></span>
+                                <span class="enroll-bracket enroll-bracket-br"></span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="enroll-side enroll-right">
+                    <div class="enroll-panel-label">Guidance</div>
+                    <div class="enroll-guidance-list guidance-panel">
+                        <div class="enroll-guidance-card">
+                            <span class="enroll-step-dot"></span>
+                            <div class="enroll-guidance-label">Current status</div>
+                            <div class="enroll-guidance-value guidance-text" id="current-status">Preparing camera</div>
+                        </div>
+                        <div class="enroll-guidance-card">
+                            <span class="enroll-step-dot"></span>
+                            <div class="enroll-guidance-label">Guidance</div>
+                            <div class="enroll-guidance-value guidance-text" id="guidance-text">Look straight into the circle.</div>
+                        </div>
+                        <div class="enroll-guidance-card enroll-stats-card">
+                            <span class="enroll-step-dot"></span>
+                            <div class="enroll-guidance-label">Capture stats</div>
+                            <div class="enroll-stat-stack" aria-label="Enrollment capture stats">
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Accepted</span>
+                                    <strong id="accepted-stat">0 / 20</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Captured</span>
+                                    <strong id="captured-stat">0 / 60</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Rejected</span>
+                                    <strong id="rejected-count">0</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Burst</span>
+                                    <strong id="attempt-counter">0</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Quality</span>
+                                    <strong id="quality-stat">Pending</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="enroll-guidance-card enroll-stats-card">
+                            <span class="enroll-step-dot"></span>
+                            <div class="enroll-guidance-label">Profile coverage</div>
+                            <div class="enroll-stat-stack" aria-label="Enrollment profile coverage">
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Diversity</span>
+                                    <strong id="diversity-stat">Low</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Lighting</span>
+                                    <strong id="lighting-stat">Good</strong>
+                                </div>
+                                <div class="enroll-stat-row guidance-row">
+                                    <span>Stability</span>
+                                    <strong id="stability-stat">Pending</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <footer class="enroll-bottom">
+                <section class="enroll-status-card">
+                    <div class="enroll-panel-label">System Status</div>
+                    <div class="enroll-status-value" id="accepted-count">Accepted: 0 / 20</div>
+                    <div class="enroll-status-caption">SECURITY LEVEL: MAXIMUM</div>
+                    <div class="enroll-progress-bar" aria-hidden="true">
+                        <div class="enroll-progress-bar-fill" id="progress-bar-fill"></div>
+                    </div>
+                </section>
+
+                <section class="enroll-status-card enroll-status-main">
+                    <div class="enroll-panel-label">Status</div>
+                    <div class="enroll-main-status-wrap">
+                        <div class="enroll-main-status" id="main-status">Initializing enrollment system...</div>
+                    </div>
+                    <div class="enroll-action-row">
+                        <button class="enroll-btn enroll-btn-primary" id="pause-button" type="button">PAUSE ENROLLMENT</button>
+                        <button class="enroll-btn enroll-btn-primary" id="resume-button" type="button" hidden>RESUME ENROLLMENT</button>
+                        <button class="enroll-btn enroll-btn-primary" id="complete-button" type="button" disabled>COMPLETE ENROLLMENT</button>
+                        <button class="enroll-btn enroll-btn-secondary" id="restart-button" type="button">RESTART ENROLLMENT</button>
+                        <button class="enroll-btn enroll-btn-cancel" id="cancel-button" type="button">RETURN TO LAUNCHER</button>
+                    </div>
+                    <canvas class="enroll-status-waveform" id="status-waveform" aria-hidden="true"></canvas>
+                    <div class="enroll-status-caption" id="status-caption">Awaiting camera and enrollment session.</div>
+                </section>
+
+                <section class="enroll-status-card enroll-lock-card">
+                    <div class="enroll-lock-copy">
+                        <div class="enroll-panel-label">Attempts</div>
+                        <div class="enroll-status-value">Burst Scan</div>
+                        <div class="enroll-status-caption">LOCKOUT</div>
+                        <div class="enroll-status-caption" id="stability-caption">Embedding stability: 0.000</div>
+                    </div>
+                    <div class="enroll-lock-icon" aria-hidden="true"></div>
+                </section>
+            </footer>
+        </div>
+        <aside class="enroll-debug-panel" id="debug-panel" hidden>
+            <div>state: <span id="debug-state">idle</span></div>
+            <div>request: <span id="debug-request-id">-</span></div>
+            <div>frames: <span id="debug-frames">0</span></div>
+            <div>sent: <span id="debug-sent">no</span></div>
+            <div>received: <span id="debug-received">no</span></div>
+            <div>timeout: <span id="debug-timeout">0</span>ms</div>
+            <div>http: <span id="debug-http-status">-</span></div>
+            <div>reason: <span id="debug-reason">-</span></div>
+        </aside>
+    </div>
+    <script src="/enroll/enroll.js"></script>
+</body>
+</html>

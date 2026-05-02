@@ -1,0 +1,24 @@
+{
+  "task_id": "8a15d22a-185a-4125-8e31-ff93c08e73de",
+  "session_id": "fac6feb3-4191-4550-9316-1794a8b4ae1b",
+  "user_message": "Open Chrome.",
+  "route": "automation",
+  "status": "completed",
+  "created_at": 1775135280.2512786,
+  "updated_at": 1775135280.298198,
+  "final_response": "Opening Chrome.",
+  "steps": [
+    {
+      "step_id": "f7924279",
+      "tool_name": "automation",
+      "description": "Run automation action: Open Chrome.",
+      "safety_level": "safe",
+      "input": {
+        "command": "Open Chrome."
+      },
+      "status": "completed",
+      "output_summary": "Opening Chrome.",
+      "approval_id": ""
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "session_id": "78a16854-84d9-4feb-b545-978d60646416",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is this Jarvis?"
+    },
+    {
+      "role": "assistant",
+      "content": "This is a figurine of Goku from Dragon Ball Z. The figurine depicts Goku sitting on a black base with the \"Dragon Ball Z\" logo on it, and is being held by a man with short black hair and a green t-shirt."
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome and search YouTube."
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened Chrome for you. I've run the search for you."
+    }
+  ]
+}

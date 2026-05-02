@@ -1,0 +1,109 @@
+{
+  "session_id": "7fdfafd6-1e6d-40a9-b79f-6073f4a72f2f",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. How can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "what is my favourite game"
+    },
+    {
+      "role": "assistant",
+      "content": "Your favorite game is eFootball, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "bhai Javed"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, I'm not aware of any information about a person named Javed being your brother. If you could provide more context, I'd be happy to help."
+    },
+    {
+      "role": "user",
+      "content": "he is not my brother I am saying by Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "You're calling me \"bhai\", which is a term of respect, Moksh. I'm here to help you with any questions or tasks you may have."
+    },
+    {
+      "role": "user",
+      "content": "by Javed"
+    },
+    {
+      "role": "assistant",
+      "content": "I think you meant to say \"bhai Jarvis\", Moksh."
+    },
+    {
+      "role": "user",
+      "content": "by Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "You're addressing me directly, Moksh. What can I do for you?"
+    },
+    {
+      "role": "user",
+      "content": "have a good day Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "You too, Moksh. Have a great day and happy gaming, especially with eFootball."
+    },
+    {
+      "role": "user",
+      "content": "by Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "You're saying goodbye, Moksh. It was nice chatting with you. Until next time."
+    },
+    {
+      "role": "user",
+      "content": "who is alone mask"
+    },
+    {
+      "role": "assistant",
+      "content": "I couldn't find any specific information on a character or entity called \"Alone Mask\", Moksh. If you have more context or details, I'd be happy to try and help you further."
+    },
+    {
+      "role": "user",
+      "content": "who is Donald Trump"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, Donald Trump is the 45th and 47th President of the United States, a businessman, and a media personality, born on June 14, 1946, in Queens, New York."
+    },
+    {
+      "role": "user",
+      "content": "who is his best friends"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, Donald Trump's closest friends include Jared Kushner, Ivanka Trump, and Tom Barrack, as well as media tycoon Rupert Murdoch, and other key allies like Steve Witkoff and Dana White, the president of the Ultimate Fighting Championship."
+    },
+    {
+      "role": "user",
+      "content": "is Narendra Modi his best friend"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, Narendra Modi and Donald Trump have a close relationship, but whether he is Trump's best friend is subjective. However, they have expressed mutual admiration and respect for each other, and their friendship has been highlighted during various meetings and events, including the \"Howdy Modi\" and \"Namaste Trump\" rallies."
+    },
+    {
+      "role": "user",
+      "content": "what is the relationship between Russia and India right now about the oil situation"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, currently, India continues to import Russian oil, with Russia being India's largest crude oil supplier, despite temporary sanctions waivers from the US. India has rejected the need for US permission to buy Russian oil, and the two countries have a significant trade relationship in the energy sector."
+    }
+  ]
+}

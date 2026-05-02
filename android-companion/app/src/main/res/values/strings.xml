@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">J.A.R.V.I.S</string>
+    <string name="service_label">Jarvis Incoming Call Service</string>
+    <string name="notification_service_label">Jarvis Call Notification Listener</string>
+    <string name="backend_url_hint">Jarvis backend URL</string>
+    <string name="device_id_hint">Device ID</string>
+    <string name="auth_token_hint">Phone bridge token</string>
+    <string name="hiya_toggle">Enable Hiya provider scaffold</string>
+    <string name="hiya_app_id_hint">Hiya app ID</string>
+    <string name="hiya_api_key_hint">Hiya API key</string>
+    <string name="voice_toggle">Speak caller result aloud</string>
+    <string name="save_settings">Save settings</string>
+    <string name="test_flow">Test notification and voice</string>
+    <string name="open_notification_access">Open notification access</string>
+    <string name="clear_log">Clear event log</string>
+    <string name="saved_message">Settings saved. The companion is ready to use the latest values.</string>
+    <string name="test_running">Running test...</string>
+    <string name="test_success">Test completed. Check notification and audio.</string>
+    <string name="test_failed">Test failed: %1$s</string>
+    <string name="log_cleared">Event log cleared.</string>
+    <string name="notification_permission_granted">Notifications allowed. Jarvis can post incoming call alerts.</string>
+    <string name="notification_permission_denied">Notification permission was not granted.</string>
+    <string name="contacts_permission_granted">Contacts allowed. Saved callers can now be matched locally.</string>
+    <string name="contacts_permission_denied">Contacts permission was not granted.</string>
+    <string name="backend_open_missing">Enter a backend URL first.</string>
+    <string name="unknown_error">Unknown error</string>
+    <string name="event_log_title">Event log</string>
+    <string name="no_logs_yet">No logs yet.</string>
+    <string name="status_default">Set your backend URL, save your token, allow the required permissions, then run a quick test.</string>
+    <string name="setup_hint">This app forwards incoming caller numbers to your Jarvis backend, shows the lookup result in a notification, and can play Jarvis-generated MP3 audio.</string>
+    <string name="setup_steps">Next: save your backend URL and token, allow notifications, then set this app as the caller ID or spam app in Android Phone settings.</string>
+</resources>

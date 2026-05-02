@@ -1,0 +1,117 @@
+{
+  "session_id": "736fc131-6b71-4cd4-ad52-1d4f52d02ada",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, nice to see you again, how can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test."
+    },
+    {
+      "role": "assistant",
+      "content": "Where should I save test?"
+    },
+    {
+      "role": "user",
+      "content": "Save it on desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "Created test in Save it."
+    },
+    {
+      "role": "user",
+      "content": "Open the file."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening file."
+    },
+    {
+      "role": "user",
+      "content": "Where is the test file."
+    },
+    {
+      "role": "assistant",
+      "content": "The test file is on your desktop, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Create a file, uh, create a file called. Test in the root uh in the Jarvis 2026 folder."
+    },
+    {
+      "role": "assistant",
+      "content": "Created create a file called. Test in root."
+    },
+    {
+      "role": "user",
+      "content": "In that file add hello. This is written by Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    },
+    {
+      "role": "user",
+      "content": "Jarvis, tell me news about today."
+    },
+    {
+      "role": "assistant",
+      "content": "As of today, April 16, 2026, I found that there are various news updates, including concerns over H-1B visa fees impacting Indian professionals in the US, and the Indian IT sector facing a 25% slump in job growth amid layoffs, Sir."
+    },
+    {
+      "role": "user",
+      "content": "Jarvis, what is the news?"
+    },
+    {
+      "role": "assistant",
+      "content": "There's news about JARVIS projects, including AI tools for ATC and digital assistants in cockpits, and Rebecca Jarvis, a prominent business journalist for ABC News, has conducted interviews with notable figures in business and technology, Sir."
+    },
+    {
+      "role": "user",
+      "content": "What can you tell me what will be the playing 11 of Chennai Super Kings against Hyderabad?"
+    },
+    {
+      "role": "assistant",
+      "content": "The playing 11 for today's match between Chennai Super Kings and Sunrisers Hyderabad is not available as of now, but I can suggest checking the official IPL sources for the latest lineup, Sir."
+    },
+    {
+      "role": "user",
+      "content": "Can you predict who will be playing in that match?"
+    },
+    {
+      "role": "assistant",
+      "content": "The exact playing 11 for Chennai Super Kings vs Sunrisers Hyderabad is not available, but I can tell you that the teams have a history of competitive matches, with players like MS Dhoni, Shane Watson, and David Warner often making significant contributions, Sir."
+    },
+    {
+      "role": "user",
+      "content": "Jarvis, what am I holding?"
+    },
+    {
+      "role": "assistant",
+      "content": "You are holding a Captain America shield. The shield is circular with a blue center and a white star surrounded by concentric circles of silver and red."
+    },
+    {
+      "role": "user",
+      "content": "Can you tell me a fun fact about it?"
+    },
+    {
+      "role": "assistant",
+      "content": "The object you're holding appears to be a Captain America shield. A fun fact about it is that Captain America's shield is a nearly indestructible shield made of vibranium, a rare metal with unique properties that make it extremely durable and lightweight."
+    },
+    {
+      "role": "user",
+      "content": "Jarvis, accept the phone."
+    },
+    {
+      "role": "assistant",
+      "content": "I see a boy. He is wearing black-rimmed glasses and a black, green and orange shirt. He appears to be looking down."
+    }
+  ]
+}

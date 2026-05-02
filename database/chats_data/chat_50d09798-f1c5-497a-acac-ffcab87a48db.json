@@ -1,0 +1,61 @@
+{
+  "session_id": "50d09798-f1c5-497a-acac-ffcab87a48db",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. How can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "Generate an image of Tony Stark."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the generate image in the background. I'll open it for you when it's ready."
+    },
+    {
+      "role": "user",
+      "content": "Make the image more realistic."
+    },
+    {
+      "role": "assistant",
+      "content": "Automation supports opening and closing apps, play and search commands, system volume controls, and creating, editing, moving, renaming, and deleting files or folders across your laptop except protected system locations."
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "test Jarvis created at C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\test Jarvis."
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test Jarvis and inside it write hello. This is written by Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "test Jarvis and created at C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\it write hello. This is written by Jarvis\\test Jarvis and."
+    },
+    {
+      "role": "user",
+      "content": "Create a folder called Test Jarvis and Insider."
+    },
+    {
+      "role": "assistant",
+      "content": "Folder Test Jarvis and Insider created at C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\Test Jarvis and Insider."
+    },
+    {
+      "role": "user",
+      "content": "Inside that folder ad hello. This is written by Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    }
+  ]
+}

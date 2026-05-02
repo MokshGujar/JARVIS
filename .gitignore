@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets / local config
+.env
+*.env
+.env.*
+!.env.example
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Models / caches
+.cache/
+models/
+checkpoints/
+*.nemo
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# HuggingFace / NeMo / Torch caches if inside repo
+huggingface/
+models--*/
+.nemo_cache/
+
+# Node/frontend
+node_modules/
+dist/
+build/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

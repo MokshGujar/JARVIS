@@ -1,0 +1,85 @@
+{
+  "session_id": "c59087a7-fbb2-4352-8600-559d0ffc4739",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, how can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome and generate an image of Tony Stark."
+    },
+    {
+      "role": "assistant",
+      "content": "Do you want me to open chrome as the app or the website? Tell me app or website for chrome."
+    },
+    {
+      "role": "user",
+      "content": "App app."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening chrome. What should I search in Chrome?"
+    },
+    {
+      "role": "user",
+      "content": "Uh, search about, uh, Elon Musk."
+    },
+    {
+      "role": "assistant",
+      "content": "Searching Google for about Elon Musk. in chrome."
+    },
+    {
+      "role": "user",
+      "content": "Generate an image of Tony Stark."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the generate image in the background. I'll open it for you when it's ready."
+    },
+    {
+      "role": "user",
+      "content": "Uh, can you search about Donald Trump in?"
+    },
+    {
+      "role": "assistant",
+      "content": "I've already opened Chrome for you, I'll now search for Donald Trump in it."
+    },
+    {
+      "role": "user",
+      "content": "Close Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Closing Chrome."
+    },
+    {
+      "role": "user",
+      "content": "What about the image?"
+    },
+    {
+      "role": "assistant",
+      "content": "The image of Tony Stark is ready, I'll open it for you."
+    },
+    {
+      "role": "user",
+      "content": "Where is the image."
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "My Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "I've got the image of Tony Stark generated and it should be visible to you now."
+    }
+  ]
+}

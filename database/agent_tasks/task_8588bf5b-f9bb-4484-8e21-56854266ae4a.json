@@ -1,0 +1,24 @@
+{
+  "task_id": "8588bf5b-f9bb-4484-8e21-56854266ae4a",
+  "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+  "user_message": "Close Chrome Javas.",
+  "route": "automation",
+  "status": "awaiting_approval",
+  "created_at": 1775134877.6770382,
+  "updated_at": 1775134877.6770382,
+  "final_response": "",
+  "steps": [
+    {
+      "step_id": "a8928d05",
+      "tool_name": "automation",
+      "description": "Run automation action: Close Chrome Javas.",
+      "safety_level": "confirm",
+      "input": {
+        "command": "Close Chrome Javas."
+      },
+      "status": "awaiting_approval",
+      "output_summary": "",
+      "approval_id": "7db46c61-73aa-4d4e-92c9-06c560b46096"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+.hud-grid-texture {
+    background-image:
+        linear-gradient(rgba(0,230,255,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,230,255,0.06) 1px, transparent 1px);
+    background-size: 32px 32px;
+}
+
+.hud-scanline-texture {
+    background-image: repeating-linear-gradient(180deg, transparent 0 3px, rgba(0,230,255,0.08) 4px);
+}
+
+.hud-radial-texture {
+    background:
+        radial-gradient(circle at 30% 20%, rgba(0,230,255,0.12), transparent 26%),
+        radial-gradient(circle at 74% 34%, rgba(0,153,255,0.10), transparent 28%),
+        #03070b;
+}

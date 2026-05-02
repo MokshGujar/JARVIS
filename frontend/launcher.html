@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#050510">
+    <title>J.A.R.V.I.S Face-Gate</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg?v=5">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Poppins:wght@300;400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/app/style.css?v=5">
+    <link rel="stylesheet" href="/launcher/launcher.css">
+</head>
+<body>
+    <div class="launcher-app launcher-state-idle" id="launcher-app">
+        <div class="launcher-bg-grid" aria-hidden="true"></div>
+        <div class="launcher-bg-radial" aria-hidden="true"></div>
+        <div class="launcher-hud-frame" aria-hidden="true"></div>
+        <div class="launcher-shell">
+            <header class="launcher-top">
+                <div class="launcher-title-block">
+                    <div class="launcher-eyebrow">FACE-GATE VERIFICATION SYSTEM</div>
+                    <h1 class="launcher-title">JARVIS</h1>
+                    <p class="launcher-subtitle">Biometric startup authorization</p>
+                </div>
+                <div class="launcher-top-meta">
+                    <div class="launcher-meta-pill">
+                        <span class="launcher-meta-dot"></span>
+                        <span id="top-status-label">INITIALIZING</span>
+                    </div>
+                </div>
+            </header>
+
+            <main class="launcher-main">
+                <section class="launcher-side launcher-left">
+                    <div class="launcher-panel-label">Verification Steps</div>
+                    <div class="launcher-step-list" id="verification-steps">
+                        <div class="launcher-step" data-step="camera-online">
+                            <span class="launcher-step-icon" data-icon="camera"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Camera online</span>
+                                <span class="launcher-step-subtitle">Video feed active</span>
+                            </span>
+                            <span class="launcher-step-dot"></span>
+                        </div>
+                        <div class="launcher-step" data-step="face-detected">
+                            <span class="launcher-step-icon" data-icon="face"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Face detected</span>
+                                <span class="launcher-step-subtitle">Face found in frame</span>
+                            </span>
+                            <span class="launcher-step-dot"></span>
+                        </div>
+                        <div class="launcher-step" data-step="quality-check">
+                            <span class="launcher-step-icon" data-icon="wave"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Quality check</span>
+                                <span class="launcher-step-subtitle">Image quality optimal</span>
+                            </span>
+                            <span class="launcher-step-dot"></span>
+                        </div>
+                        <div class="launcher-step" data-step="liveness-check">
+                            <span class="launcher-step-icon" data-icon="shield"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Liveness check</span>
+                                <span class="launcher-step-subtitle">Liveness verified</span>
+                            </span>
+                            <span class="launcher-step-dot"></span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="launcher-core">
+                    <div class="launcher-reactor-shell">
+                        <canvas class="launcher-reactor-canvas" id="reactor-canvas" aria-hidden="true"></canvas>
+                        <div class="launcher-camera-shell">
+                            <div class="launcher-camera-ring"></div>
+                            <div class="launcher-camera-mask">
+                                <video id="camera-video" class="launcher-camera-video" autoplay muted playsinline></video>
+                                <div class="launcher-camera-vignette" aria-hidden="true"></div>
+                            </div>
+                            <div class="launcher-targeting" aria-hidden="true">
+                                <span class="launcher-bracket launcher-bracket-tl"></span>
+                                <span class="launcher-bracket launcher-bracket-tr"></span>
+                                <span class="launcher-bracket launcher-bracket-bl"></span>
+                                <span class="launcher-bracket launcher-bracket-br"></span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="launcher-side launcher-right">
+                    <div class="launcher-panel-label">Authentication Steps</div>
+                    <div class="launcher-step-list" id="authentication-steps">
+                        <div class="launcher-step" data-step="matching-profile">
+                            <span class="launcher-step-dot"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Matching profile</span>
+                                <span class="launcher-step-subtitle">Comparing face data</span>
+                            </span>
+                            <span class="launcher-step-icon" data-icon="profile"></span>
+                        </div>
+                        <div class="launcher-step" data-step="face-recognized">
+                            <span class="launcher-step-dot"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Face recognized</span>
+                                <span class="launcher-step-subtitle">Identity matched</span>
+                            </span>
+                            <span class="launcher-step-icon" data-icon="face"></span>
+                        </div>
+                        <div class="launcher-step" data-step="session-created">
+                            <span class="launcher-step-dot"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Session created</span>
+                                <span class="launcher-step-subtitle">Secure session ready</span>
+                            </span>
+                            <span class="launcher-step-icon" data-icon="shield"></span>
+                        </div>
+                        <div class="launcher-step" data-step="opening-jarvis">
+                            <span class="launcher-step-dot"></span>
+                            <span class="launcher-step-copy">
+                                <span class="launcher-step-text">Opening Jarvis</span>
+                                <span class="launcher-step-subtitle">Launching system</span>
+                            </span>
+                            <span class="launcher-step-icon" data-icon="power"></span>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <footer class="launcher-bottom">
+                <section class="launcher-status-card">
+                    <div class="launcher-panel-label">System Status</div>
+                    <div class="launcher-status-value" id="system-status">ONLINE</div>
+                    <div class="launcher-status-caption">SECURITY LEVEL: MAXIMUM</div>
+                    <div class="launcher-bar-row" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                </section>
+
+                <section class="launcher-status-card launcher-status-main">
+                    <div class="launcher-panel-label">Status</div>
+                    <div class="launcher-main-status-wrap">
+                        <div class="launcher-main-status" id="main-status">Initializing secure launcher...</div>
+                    </div>
+                    <div class="launcher-action-row">
+                        <button class="launcher-btn launcher-btn-primary" id="verify-button" type="button" disabled>VERIFY FACE</button>
+                        <button class="launcher-btn launcher-btn-secondary" id="enroll-button" type="button" hidden>OPEN ENROLLMENT</button>
+                    </div>
+                    <canvas class="launcher-status-waveform" id="status-waveform" aria-hidden="true"></canvas>
+                    <div class="launcher-status-caption" id="status-caption">Awaiting camera and backend readiness.</div>
+                </section>
+
+                <section class="launcher-status-card launcher-lock-card">
+                    <div class="launcher-lock-copy">
+                        <div class="launcher-panel-label">Attempts</div>
+                        <div class="launcher-status-value" id="attempts-label">0 / 3</div>
+                        <div class="launcher-status-caption">LOCKOUT</div>
+                        <div class="launcher-status-caption" id="lockout-label">No active lockout</div>
+                    </div>
+                    <div class="launcher-lock-icon" aria-hidden="true"></div>
+                </section>
+            </footer>
+        </div>
+        <aside class="launcher-debug-panel" id="debug-panel" hidden>
+            <div>state: <span id="debug-state">idle</span></div>
+            <div>request: <span id="debug-request-id">-</span></div>
+            <div>frames: <span id="debug-frames">0</span></div>
+            <div>sent: <span id="debug-sent">no</span></div>
+            <div>received: <span id="debug-received">no</span></div>
+            <div>timeout: <span id="debug-timeout">0</span>ms</div>
+            <div>http: <span id="debug-http-status">-</span></div>
+            <div>reason: <span id="debug-reason">-</span></div>
+        </aside>
+    </div>
+    <script src="/launcher/launcher.js"></script>
+</body>
+</html>

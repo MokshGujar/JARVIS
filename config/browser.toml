@@ -1,0 +1,2 @@
+default_timeout_seconds = 20
+whatsapp_login_timeout_seconds = 12

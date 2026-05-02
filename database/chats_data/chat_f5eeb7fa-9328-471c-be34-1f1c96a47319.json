@@ -1,0 +1,13 @@
+{
+  "session_id": "f5eeb7fa-9328-471c-be34-1f1c96a47319",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What can you do?"
+    },
+    {
+      "role": "assistant",
+      "content": "I can answer questions, open apps or websites, generate images, play music, write content, and search the web for you, Moksh. I'll do my best to assist you with any task or provide information on a wide range of topics."
+    }
+  ]
+}

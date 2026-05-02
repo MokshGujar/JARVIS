@@ -1,0 +1,24 @@
+{
+  "task_id": "d1f6c739-f250-439c-b16a-d7cfd781dd2b",
+  "session_id": "b462e89b-e9c5-4e72-8a64-5c279d4fa295",
+  "user_message": "call Shakti jio",
+  "route": "phone_control",
+  "status": "completed",
+  "created_at": 1775136656.7861187,
+  "updated_at": 1775136656.7941725,
+  "final_response": "Should I call shakti jio normally or on WhatsApp?",
+  "steps": [
+    {
+      "step_id": "0ffe8826",
+      "tool_name": "phone_control",
+      "description": "Queue the requested phone command.",
+      "safety_level": "safe",
+      "input": {
+        "message": "call Shakti jio"
+      },
+      "status": "completed",
+      "output_summary": "Should I call shakti jio normally or on WhatsApp?",
+      "approval_id": ""
+    }
+  ]
+}

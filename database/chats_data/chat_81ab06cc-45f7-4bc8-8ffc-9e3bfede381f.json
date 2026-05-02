@@ -1,0 +1,21 @@
+{
+  "session_id": "81ab06cc-45f7-4bc8-8ffc-9e3bfede381f",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello Jarvis tell me about"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm doing well, thanks for asking, Moksh. I can tell you about various topics, provide information, open apps or websites, generate images, play music, write content, and search the web for you. What specific topic would you like to know about?"
+    },
+    {
+      "role": "user",
+      "content": "tell me about myself"
+    },
+    {
+      "role": "assistant",
+      "content": "Moksh, you're a talented individual with interests in eFootball, and your Gmail address is gujarmoksh0101@gmail.com, and your Instagram handle is @mokshgujar_01. You're also someone who values privacy and confidentiality, especially when it comes to certain aspects of your personal life, such as your connection with Suhani."
+    }
+  ]
+}

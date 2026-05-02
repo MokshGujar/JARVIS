@@ -1,0 +1,26 @@
+{
+  "task_id": "196bd6b9-1a5c-4e17-b279-b42f4e0cd9b4",
+  "session_id": "caaed45e-d80e-4434-b13f-4261a333f118",
+  "user_message": "My job is.",
+  "route": "general_chat",
+  "status": "completed",
+  "created_at": 1775136883.5184917,
+  "updated_at": 1775136884.7814693,
+  "final_response": "You're a data scientist, Moksh.",
+  "steps": [
+    {
+      "step_id": "0a25d5e4",
+      "tool_name": "general_chat",
+      "description": "Answer with the general_chat tool.",
+      "safety_level": "safe",
+      "input": {
+        "message": "My job is.",
+        "reasoning": "Answerable from knowledge and context",
+        "elapsed_ms": 362
+      },
+      "status": "completed",
+      "output_summary": "Answered from knowledge and memory.",
+      "approval_id": ""
+    }
+  ]
+}

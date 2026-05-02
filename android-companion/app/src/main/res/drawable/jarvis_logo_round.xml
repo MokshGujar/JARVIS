@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#08111E" />
+        </shape>
+    </item>
+    <item android:insetLeft="10dp" android:insetTop="10dp" android:insetRight="10dp" android:insetBottom="10dp">
+        <shape android:shape="oval">
+            <stroke
+                android:width="1dp"
+                android:color="#66EAF6FF" />
+            <solid android:color="#00000000" />
+        </shape>
+    </item>
+    <item android:insetLeft="14dp" android:insetTop="14dp" android:insetRight="14dp" android:insetBottom="14dp">
+        <bitmap
+            android:antialias="true"
+            android:gravity="center"
+            android:src="@drawable/jarvis_logo" />
+    </item>
+</layer-list>

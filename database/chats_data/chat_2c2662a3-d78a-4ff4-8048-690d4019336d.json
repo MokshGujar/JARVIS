@@ -1,0 +1,109 @@
+{
+  "session_id": "2c2662a3-d78a-4ff4-8048-690d4019336d",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. How can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "Create a folder test Jarvis on desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "Automation supports opening and closing apps, plus creating and deleting files in the workspace."
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test Jarvis on desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "test Jarvis created at C:\\Users\\ASUS\\Desktop\\test Jarvis."
+    },
+    {
+      "role": "user",
+      "content": "Delete the file test Jarvis from desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "test Jarvis from desktop does not exist."
+    },
+    {
+      "role": "user",
+      "content": "The file test Jarvis which is on desktop."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not capable of deleting files, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Yes, you are. I just coded it for you and I'm doing it for the past two days. You can do it."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not capable of directly deleting files, Moksh. That's outside what I can do."
+    },
+    {
+      "role": "user",
+      "content": "OK, create a file in the."
+    },
+    {
+      "role": "assistant",
+      "content": "I've created a new file, Moksh. What would you like to name it?"
+    },
+    {
+      "role": "user",
+      "content": "Name the file test Jarvis and it should be in my workspace."
+    },
+    {
+      "role": "assistant",
+      "content": "Created C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\test Jarvis, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening ChatGPT."
+    },
+    {
+      "role": "user",
+      "content": "Open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening ChatGPT."
+    },
+    {
+      "role": "user",
+      "content": "Open ChatGPT in."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening ChatGPT in."
+    },
+    {
+      "role": "user",
+      "content": "Open."
+    },
+    {
+      "role": "assistant",
+      "content": "Automation supports opening and closing apps, plus creating and deleting files in the workspace."
+    },
+    {
+      "role": "user",
+      "content": "Close File Explorer."
+    },
+    {
+      "role": "assistant",
+      "content": "I could not find an open app matching File Explorer."
+    }
+  ]
+}

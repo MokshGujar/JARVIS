@@ -1,0 +1,26 @@
+{
+  "task_id": "18655773-bda4-4b33-92a4-78515690d29c",
+  "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+  "user_message": "It is still on.",
+  "route": "realtime_chat",
+  "status": "completed",
+  "created_at": 1775134790.742188,
+  "updated_at": 1775134793.983981,
+  "final_response": "It seems Chrome is still open. I'll try to close it again for you, Moksh.",
+  "steps": [
+    {
+      "step_id": "76034a14",
+      "tool_name": "realtime_chat",
+      "description": "Answer with the realtime_chat tool.",
+      "safety_level": "safe",
+      "input": {
+        "message": "It is still on.",
+        "reasoning": "Needs live web search",
+        "elapsed_ms": 236
+      },
+      "status": "completed",
+      "output_summary": "Answered with live web search.",
+      "approval_id": ""
+    }
+  ]
+}

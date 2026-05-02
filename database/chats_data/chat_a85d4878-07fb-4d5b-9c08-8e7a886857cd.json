@@ -1,0 +1,101 @@
+{
+  "session_id": "a85d4878-07fb-4d5b-9c08-8e7a886857cd",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello Jarvis, open chat."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm opening the chat for you, Moksh. You should see the chat window now."
+    },
+    {
+      "role": "user",
+      "content": "Open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opened https://chatgpt.com."
+    },
+    {
+      "role": "user",
+      "content": "In ChatGPT type Hello. This is type by Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Opened ChatGPT and typed the requested text."
+    },
+    {
+      "role": "user",
+      "content": "Create a file called test."
+    },
+    {
+      "role": "assistant",
+      "content": "Created C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\test."
+    },
+    {
+      "role": "user",
+      "content": "Add Hello This is written by Jarvis in test file."
+    },
+    {
+      "role": "assistant",
+      "content": "Added the text to C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\test."
+    },
+    {
+      "role": "user",
+      "content": "Delete the test."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not capable of deleting files, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Delete test under score."
+    },
+    {
+      "role": "assistant",
+      "content": "To delete test data, you can use \"End Flow/Clear Flow Data\" to stop running flows and clear associated data, but you'll need to manually delete saved data from folder entities separately, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "E Test under score Jarvis file from Jarvis 2026 copy."
+    },
+    {
+      "role": "assistant",
+      "content": "The E Test score file from Jarvis 2026 is available on PyPI under jarvis-tools, with the latest version being 2026.3.10, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Delete the created."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not capable of deleting files, Moksh."
+    },
+    {
+      "role": "user",
+      "content": "Delete the file you created Name test."
+    },
+    {
+      "role": "assistant",
+      "content": "C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\you created Name test does not exist."
+    },
+    {
+      "role": "user",
+      "content": "Delete the file name named test in the folder."
+    },
+    {
+      "role": "assistant",
+      "content": "C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\name named test in the folder does not exist."
+    },
+    {
+      "role": "user",
+      "content": "In the file test under score Jarvis add hi. This is written by Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\the file test under score Jarvis does not exist."
+    }
+  ]
+}

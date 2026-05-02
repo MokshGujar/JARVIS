@@ -1,0 +1,3 @@
+desktop_timeout_seconds = 8
+web_timeout_seconds = 20
+contact_fuzzy_threshold = 0.88

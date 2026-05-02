@@ -1,0 +1,25 @@
+.hud-noise {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.045;
+    background-image:
+        radial-gradient(circle at 20% 30%, #fff 0 1px, transparent 1px),
+        radial-gradient(circle at 70% 60%, #fff 0 1px, transparent 1px);
+    background-size: 17px 19px, 23px 29px;
+}
+
+.hud-glow-text {
+    color: #00e6ff;
+    text-shadow:
+        0 0 4px rgba(0,230,255,0.8),
+        0 0 12px rgba(0,230,255,0.5),
+        0 0 28px rgba(0,230,255,0.2);
+}
+
+.hud-cyan-stroke {
+    stroke: #00e6ff;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}

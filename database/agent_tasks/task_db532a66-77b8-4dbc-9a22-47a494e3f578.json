@@ -1,0 +1,24 @@
+{
+  "task_id": "db532a66-77b8-4dbc-9a22-47a494e3f578",
+  "session_id": "fac6feb3-4191-4550-9316-1794a8b4ae1b",
+  "user_message": "Call Suhani on WhatsApp.",
+  "route": "phone_control",
+  "status": "completed",
+  "created_at": 1775135289.6075175,
+  "updated_at": 1775135289.6211307,
+  "final_response": "Calling suhani on WhatsApp.",
+  "steps": [
+    {
+      "step_id": "9f7d5f22",
+      "tool_name": "phone_control",
+      "description": "Queue the requested phone command.",
+      "safety_level": "safe",
+      "input": {
+        "message": "Call Suhani on WhatsApp."
+      },
+      "status": "completed",
+      "output_summary": "Calling suhani on WhatsApp.",
+      "approval_id": ""
+    }
+  ]
+}

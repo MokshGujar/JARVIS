@@ -1,0 +1,21 @@
+enabled = true
+task_timeout_seconds = 120
+smart_automation_enabled = true
+semantic_planner_enabled = false
+automation_context_enabled = true
+automation_context_ttl_seconds = 900
+automation_context_redact_sensitive = true
+automation_dry_run_enabled = true
+automation_duplicate_protection_enabled = true
+automation_duplicate_window_seconds = 5
+
+[app_interaction]
+enabled = true
+backend = "pywinauto"
+require_focused_window = true
+click_coordinates_enabled = false
+type_delay_ms = 10
+auto_focus_after_app_open = true
+focus_timeout_seconds = 5
+semantic_actions_enabled = true
+debug = false

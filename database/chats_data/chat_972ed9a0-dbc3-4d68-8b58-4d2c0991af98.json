@@ -1,0 +1,37 @@
+{
+  "session_id": "972ed9a0-dbc3-4d68-8b58-4d2c0991af98",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Jarvis, can you text Suhani?"
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened Google for you."
+    },
+    {
+      "role": "user",
+      "content": "To XY, the equal polest."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not able to send texts or access personal accounts, that's outside what I can do."
+    },
+    {
+      "role": "user",
+      "content": "Image Can you generate an e-mail of a programming language called Python in a snake around it and open Chrome and search about, let's say Narendra Modi?"
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened Chrome for you. I've run the search for you. I'm working on the generate image in the background. I'll open it for you when it's ready."
+    },
+    {
+      "role": "user",
+      "content": "Uh, can you write me an application for?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    }
+  ]
+}

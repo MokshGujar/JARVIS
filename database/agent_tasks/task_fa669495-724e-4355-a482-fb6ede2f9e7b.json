@@ -1,0 +1,24 @@
+{
+  "task_id": "fa669495-724e-4355-a482-fb6ede2f9e7b",
+  "session_id": "fac6feb3-4191-4550-9316-1794a8b4ae1b",
+  "user_message": "Close Chrome.",
+  "route": "automation",
+  "status": "completed",
+  "created_at": 1775135322.6566503,
+  "updated_at": 1775135324.3967261,
+  "final_response": "Closing Chrome.",
+  "steps": [
+    {
+      "step_id": "95c396e5",
+      "tool_name": "automation",
+      "description": "Run automation action: Close Chrome.",
+      "safety_level": "safe",
+      "input": {
+        "command": "Close Chrome."
+      },
+      "status": "completed",
+      "output_summary": "Closing Chrome.",
+      "approval_id": ""
+    }
+  ]
+}

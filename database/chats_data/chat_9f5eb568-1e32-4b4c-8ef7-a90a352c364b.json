@@ -1,0 +1,77 @@
+{
+  "session_id": "9f5eb568-1e32-4b4c-8ef7-a90a352c364b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Show me today's system overview"
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Show me today's system overview"
+    },
+    {
+      "role": "assistant",
+      "content": "The current system overview is not available, but I can provide you with an overview of the US healthcare system launched by ISPOR in March 2026, and the Irish Payroll System overview for 2024, which details tax and leave information."
+    },
+    {
+      "role": "user",
+      "content": "Open calculator"
+    },
+    {
+      "role": "assistant",
+      "content": "Fresh live face verification is required before I can run that high-risk command."
+    },
+    {
+      "role": "user",
+      "content": "Search files"
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Open calendar"
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened Calendar for you."
+    },
+    {
+      "role": "user",
+      "content": "Give me a news update"
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Give me a news update"
+    },
+    {
+      "role": "assistant",
+      "content": "The next update for Give Me a Sun is planned for July, and Slack is forcing users to update to the latest version. Additionally, there are reports of a potential breakthrough in the Iran-US diplomatic talks, with sources indicating a possible easing of trade restrictions and a renewed commitment to peaceful negotiations."
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, nice to talk to you, Sir. What's on your mind?"
+    }
+  ]
+}

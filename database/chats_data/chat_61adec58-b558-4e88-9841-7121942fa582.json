@@ -1,0 +1,61 @@
+{
+  "session_id": "61adec58-b558-4e88-9841-7121942fa582",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. How can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "Open Chrome."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening Chrome."
+    },
+    {
+      "role": "user",
+      "content": "In Chrome, open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening ChatGPT in Chrome."
+    },
+    {
+      "role": "user",
+      "content": "Open ChatGPT."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening ChatGPT."
+    },
+    {
+      "role": "user",
+      "content": "Create a file in the workspace called Test Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Test Jarvis created at C:\\Users\\ASUS\\Documents\\Jarvis - 2026(copy)\\workspace\\Test Jarvis."
+    },
+    {
+      "role": "user",
+      "content": "Bye, Alice."
+    },
+    {
+      "role": "assistant",
+      "content": "You're saying goodbye, but I think there's been a mistake, Sir - my name is Jarvis, not Alice."
+    },
+    {
+      "role": "user",
+      "content": "Bye, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Goodbye, Moksh. It was nice chatting with you. Until next time."
+    }
+  ]
+}

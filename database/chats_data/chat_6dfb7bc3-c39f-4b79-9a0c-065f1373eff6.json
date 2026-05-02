@@ -1,0 +1,21 @@
+{
+  "session_id": "6dfb7bc3-c39f-4b79-9a0c-065f1373eff6",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Have a nice."
+    },
+    {
+      "role": "assistant",
+      "content": "You too, have a great evening, Sir."
+    },
+    {
+      "role": "user",
+      "content": "Hello, Cortana."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm Jarvis, actually. How can I assist you today, Sir?"
+    }
+  ]
+}

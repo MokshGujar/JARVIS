@@ -1,0 +1,21 @@
+{
+  "session_id": "bc787208-cfbc-4a7f-989f-99629bdd40bd",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello Jarvis"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, Moksh. How can I assist you today?"
+    },
+    {
+      "role": "user",
+      "content": "pick up the call"
+    },
+    {
+      "role": "assistant",
+      "content": "I do not know which phone to control yet. Let the Android companion contact Jarvis once first."
+    }
+  ]
+}

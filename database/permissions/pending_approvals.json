@@ -1,0 +1,62 @@
+[
+  {
+    "approval_id": "88336d5d-2ac8-464f-91ae-cf2b4e9e40db",
+    "status": "pending",
+    "tool_name": "automation",
+    "safety_level": "confirm",
+    "description": "Run automation action: Close Chrome.",
+    "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+    "task_id": "aaf07857-b80a-416d-8a8d-df427d97b738",
+    "step_id": "6fbc9676",
+    "payload": {
+      "command": "Close Chrome."
+    },
+    "created_at": 1775134761.5279813,
+    "updated_at": 1775134761.5279813
+  },
+  {
+    "approval_id": "9ac10129-69f1-4303-9595-993c60bb62e3",
+    "status": "pending",
+    "tool_name": "phone_control",
+    "safety_level": "confirm",
+    "description": "Queue the requested phone command.",
+    "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+    "task_id": "132bcf2a-f163-4417-942e-0f373773074c",
+    "step_id": "1e7da6b7",
+    "payload": {
+      "message": "Call Suhani on WhatsApp."
+    },
+    "created_at": 1775134848.5947056,
+    "updated_at": 1775134848.5947056
+  },
+  {
+    "approval_id": "7db46c61-73aa-4d4e-92c9-06c560b46096",
+    "status": "pending",
+    "tool_name": "automation",
+    "safety_level": "confirm",
+    "description": "Run automation action: Close Chrome Javas.",
+    "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+    "task_id": "8588bf5b-f9bb-4484-8e21-56854266ae4a",
+    "step_id": "a8928d05",
+    "payload": {
+      "command": "Close Chrome Javas."
+    },
+    "created_at": 1775134877.6825488,
+    "updated_at": 1775134877.6825488
+  },
+  {
+    "approval_id": "e5c91bbe-deec-4a54-9fb6-ea74418a9ede",
+    "status": "pending",
+    "tool_name": "automation",
+    "safety_level": "confirm",
+    "description": "Run automation action: Open Chrome.",
+    "session_id": "67781dcc-7611-4284-81e8-f678c94f148f",
+    "task_id": "7a2e5165-0e0c-4166-903a-4044011f8946",
+    "step_id": "bd9c5747",
+    "payload": {
+      "command": "Open Chrome."
+    },
+    "created_at": 1775134910.8623178,
+    "updated_at": 1775134910.8623178
+  }
+]

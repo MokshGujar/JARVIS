@@ -1,0 +1,37 @@
+{
+  "session_id": "af509567-fe00-4fb1-8751-1553a73a31bc",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, nice to talk to you. What's on your mind today?"
+    },
+    {
+      "role": "user",
+      "content": "Call Suhani on WhatsApp."
+    },
+    {
+      "role": "assistant",
+      "content": "Ready to call Suhani on WhatsApp. Say yes to continue or no to cancel."
+    },
+    {
+      "role": "user",
+      "content": "Yes."
+    },
+    {
+      "role": "assistant",
+      "content": "Say yes to continue or no to cancel."
+    }
+  ]
+}

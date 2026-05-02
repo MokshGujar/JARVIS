@@ -1,0 +1,45 @@
+fastapi
+uvicorn[standard]
+edge-tts
+langchain
+langchain-groq
+langchain-community
+langchain-core
+AppOpener
+keyboard
+playwright
+pyautogui
+pyperclip
+psutil
+beautifulsoup4
+Pillow
+opencv-python
+pygetwindow
+pywinauto
+pycaw
+comtypes
+ddgs
+sentence-transformers
+faiss-cpu
+python-dotenv
+pydantic
+numpy
+torch
+torchaudio
+nemo_toolkit[asr]
+transformers
+requests
+httpx
+rich
+tavily-python
+cohere
+langchain-huggingface
+Send2Trash
+youtube-transcript-api
+sounddevice
+insightface
+onnxruntime
+# Playwright browser automation also needs a one-time browser install:
+# python -m playwright install chromium
+# CUDA-enabled PyTorch wheels may need to be installed separately from the
+# PyTorch CUDA index for GPU NeMo/Parakeet deployments.

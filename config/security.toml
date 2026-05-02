@@ -1,0 +1,3 @@
+step_up_token_ttl_seconds = 30
+confirm_medium_risk = true
+confirm_high_risk = true

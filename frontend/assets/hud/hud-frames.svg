@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="main-chat-frame" viewBox="0 0 1000 620">
+      <path d="M24 1h952l23 23v572l-23 23H24L1 596V24Z" fill="none" stroke="#00e6ff" stroke-width="2"/>
+      <path d="M48 18h904l30 30v524l-30 30H48l-30-30V48Z" fill="none" stroke="#00e6ff" stroke-opacity=".28"/>
+      <path d="M1 112h24v88L1 224M999 112h-24v88l24 24M120 1l38 38h684l38-38" fill="none" stroke="#00e6ff" stroke-opacity=".72"/>
+    </symbol>
+    <symbol id="panel-frame" viewBox="0 0 340 220">
+      <path d="M14 1h312l13 13v192l-13 13H14L1 206V14Z" fill="none" stroke="#00e6ff" stroke-width="1.6"/>
+      <path d="M26 14h288l12 12v168l-12 12H26l-12-12V26Z" fill="none" stroke="#00e6ff" stroke-opacity=".24"/>
+      <path d="M236 1h58l17 17M339 56v35M1 150v34l34 34" fill="none" stroke="#00e6ff" stroke-opacity=".75"/>
+    </symbol>
+    <symbol id="card-frame" viewBox="0 0 170 130">
+      <path d="M12 1h146l11 11v106l-11 11H12L1 118V12Z" fill="none" stroke="#00e6ff" stroke-width="1.4"/>
+      <path d="M22 12h126l10 10v86l-10 10H22l-10-10V22Z" fill="none" stroke="#00e6ff" stroke-opacity=".22"/>
+    </symbol>
+    <symbol id="input-frame" viewBox="0 0 980 92">
+      <path d="M16 1h948l15 15v60l-15 15H16L1 76V16Z" fill="none" stroke="#00e6ff" stroke-width="2"/>
+      <path d="M34 13h912l20 20v26l-20 20H34L14 59V33Z" fill="none" stroke="#00e6ff" stroke-opacity=".26"/>
+    </symbol>
+  </defs>
+</svg>
