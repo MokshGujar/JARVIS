@@ -1,36 +1,49 @@
 from __future__ import annotations
 
-import logging
+import re
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
 
-from config import SEMANTIC_PLANNER_ENABLED, SMART_AUTOMATION_ENABLED
+from config import AUTOMATION_CONTEXT_TTL_SECONDS, AUTOMATION_DRY_RUN_ENABLED, SEMANTIC_PLANNER_ENABLED, SMART_AUTOMATION_ENABLED
 from app.orchestrator.action_plan import ActionPlan
 
 if TYPE_CHECKING:
     from app.orchestrator.automation_context import AutomationContext
     from app.orchestrator.smart_automation_planner import SmartAutomationPlanner
+    from app.orchestrator.semantic_automation import SemanticAutomationAction
 
-logger = logging.getLogger(__name__)
+@dataclass(slots=True)
+class DryRunRequest:
+    original_text: str
+    plan_text: str
+    trigger: str
+
+
+def is_explicit_dry_run_request(text: str) -> bool:
+    return _parse_dry_run_request(text) is not None
 
 
 class SemanticPlannerAdapter:
     """Feature-flagged boundary for semantic planning.
 
-    Phase 4A intentionally keeps this adapter non-executing. When both semantic
-    flags are enabled it may ask SmartAutomationPlanner to classify the command,
-    but it never returns an executable ActionPlan yet.
+    Phase 4B supports explicit dry-run/explain-plan requests only. It never
+    returns an executable ActionPlan for normal live routing.
     """
 
     def __init__(
         self,
         *,
-        smart_automation_enabled: bool = SMART_AUTOMATION_ENABLED,
-        semantic_planner_enabled: bool = SEMANTIC_PLANNER_ENABLED,
+        smart_automation_enabled: bool | None = None,
+        semantic_planner_enabled: bool | None = None,
+        dry_run_enabled: bool | None = None,
         planner_factory: Callable[[], SmartAutomationPlanner] | None = None,
     ) -> None:
-        self.smart_automation_enabled = bool(smart_automation_enabled)
-        self.semantic_planner_enabled = bool(semantic_planner_enabled)
+        self.smart_automation_enabled = SMART_AUTOMATION_ENABLED if smart_automation_enabled is None else bool(smart_automation_enabled)
+        self.semantic_planner_enabled = SEMANTIC_PLANNER_ENABLED if semantic_planner_enabled is None else bool(semantic_planner_enabled)
+        self.dry_run_enabled = AUTOMATION_DRY_RUN_ENABLED if dry_run_enabled is None else bool(dry_run_enabled)
         self._planner_factory = planner_factory
         self._planner: SmartAutomationPlanner | None = None
         self.last_semantic_result: Any | None = None
@@ -40,13 +53,22 @@ class SemanticPlannerAdapter:
         return self.smart_automation_enabled and self.semantic_planner_enabled
 
     def try_plan_action(self, text: str, context: AutomationContext | None = None) -> ActionPlan | None:
-        if not self.enabled:
+        return None
+
+    def try_dry_run_response(self, text: str, context: AutomationContext | None = None) -> dict[str, Any] | None:
+        request = _parse_dry_run_request(text)
+        if request is None:
             return None
+        if not self.enabled or not self.dry_run_enabled:
+            return self._unavailable_response(request)
+
+        if not request.plan_text:
+            return self._missing_plan_response(request)
 
         planner = self._get_planner()
-        self.last_semantic_result = planner.plan(text, context=context, dry_run=True)
-        logger.debug("Semantic planner classified command in dormant mode: %s", self.last_semantic_result.as_dict())
-        return None
+        result = planner.plan(request.plan_text, context=context, dry_run=True)
+        self.last_semantic_result = result
+        return self._format_dry_run_response(request, result)
 
     def _get_planner(self) -> SmartAutomationPlanner:
         if self._planner is None:
@@ -57,3 +79,234 @@ class SemanticPlannerAdapter:
 
                 self._planner = SmartAutomationPlanner()
         return self._planner
+
+    def _unavailable_response(self, request: DryRunRequest) -> dict[str, Any]:
+        message = "Semantic dry-run planning is unavailable right now. No actions were run."
+        return {
+            "success": False,
+            "action": "semantic_dry_run_unavailable",
+            "message": message,
+            "display_text": message,
+            "spoken_text": message,
+            "dry_run": True,
+            "execution_deferred": True,
+            "executable": False,
+            "requires_followup": False,
+            "original_text": request.original_text,
+        }
+
+    def _missing_plan_response(self, request: DryRunRequest) -> dict[str, Any]:
+        message = "I need to know what you want me to plan. No actions were run."
+        return {
+            "success": False,
+            "action": "semantic_dry_run",
+            "message": message,
+            "display_text": message,
+            "spoken_text": message,
+            "dry_run": True,
+            "execution_deferred": True,
+            "executable": False,
+            "requires_followup": True,
+            "missing_fields": ["automation_request"],
+            "follow_up_question": "What should I plan?",
+            "original_text": request.original_text,
+            "planned_text": request.plan_text,
+        }
+
+    def _format_dry_run_response(self, request: DryRunRequest, result: Any) -> dict[str, Any]:
+        actions = list(getattr(result, "semantic_actions", []) or [])
+        action_plan = getattr(result, "action_plan", None)
+        missing_fields = list(getattr(result, "missing_fields", []) or [])
+        requires_confirmation = bool(getattr(result, "requires_confirmation", False))
+        safety_level = str(getattr(result, "safety_level", "LOW") or "LOW")
+
+        if missing_fields:
+            display_text = self._missing_context_message(missing_fields)
+        else:
+            steps = self._describe_actions(actions, action_plan)
+            if requires_confirmation and len(steps) == 1:
+                display_text = f"I would need your confirmation before {steps[0][0].lower() + steps[0][1:]}"
+            elif steps:
+                display_text = "I would:\n" + "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
+                if requires_confirmation:
+                    display_text += "\nConfirmation would be required before running this."
+            elif requires_confirmation:
+                display_text = "I would ask for confirmation before running that action."
+            else:
+                display_text = "I can explain that plan, but I need a more specific automation request."
+
+        display_text = f"{display_text.rstrip()}\n\nNo actions were run."
+        spoken_text = self._short_spoken(display_text)
+        pending_plan = {
+            "dry_run": True,
+            "expires_at": time.time() + AUTOMATION_CONTEXT_TTL_SECONDS,
+            "semantic_actions": [action.as_dict() for action in actions],
+            "user_text": request.original_text,
+            "plan_summary": display_text,
+            "executable": False,
+        }
+        return {
+            "success": not bool(missing_fields),
+            "action": "semantic_dry_run",
+            "message": display_text,
+            "display_text": display_text,
+            "spoken_text": spoken_text,
+            "dry_run": True,
+            "execution_deferred": True,
+            "executable": False,
+            "requires_confirmation": requires_confirmation,
+            "safety_level": safety_level,
+            "missing_fields": missing_fields,
+            "follow_up_question": getattr(result, "follow_up_question", None),
+            "semantic_actions": [action.as_dict() for action in actions],
+            "semantic_plan": result.semantic_plan.as_dict() if getattr(result, "semantic_plan", None) else None,
+            "plan": action_plan.as_dict() if action_plan is not None else None,
+            "pending_dry_run_plan": pending_plan,
+            "original_text": request.original_text,
+            "planned_text": request.plan_text,
+        }
+
+    def _missing_context_message(self, missing_fields: list[str]) -> str:
+        field = missing_fields[0]
+        return {
+            "message_draft": "I need to know which message you mean first.",
+            "file": "I need to know which file you mean first.",
+            "content": "I need to know what content you mean first.",
+            "search_query": "I need to know what to search first.",
+            "reference": "I need to know what you want to replace first.",
+            "browser_context": "I need to know which browser you mean first.",
+        }.get(field, f"I need to know which {field.replace('_', ' ')} you mean first.")
+
+    def _describe_actions(self, actions: list[SemanticAutomationAction], action_plan: ActionPlan | None) -> list[str]:
+        from app.orchestrator.semantic_automation import SemanticAutomationIntent
+
+        if len(actions) == 1 and actions[0].intent == SemanticAutomationIntent.SEARCH_VISIBLE_BROWSER:
+            action = actions[0]
+            query = action.query or "the search"
+            app = _title(action.app or "browser")
+            return [
+                f"Open or focus {app}.",
+                "Select the address or search bar.",
+                f"Type {query}.",
+                "Submit the search.",
+            ]
+
+        steps: list[str] = []
+        for action in actions:
+            if action.intent == SemanticAutomationIntent.OPEN_APP:
+                steps.append(f"Open or focus {_title(action.app or action.target or 'the app')}.")
+            elif action.intent == SemanticAutomationIntent.FOCUS_APP:
+                steps.append(f"Focus {_title(action.app or action.target or 'the app')}.")
+            elif action.intent == SemanticAutomationIntent.SEARCH_WEB:
+                steps.append(f"Search the web for {action.query}.")
+            elif action.intent == SemanticAutomationIntent.CREATE_FILE:
+                steps.append(f"Create {_file_label(action.file_path or action.target)}{_location_suffix(action.file_path)}.")
+            elif action.intent == SemanticAutomationIntent.WRITE_FILE:
+                steps.append(f"Write {action.content or 'the content'} into it.")
+            elif action.intent == SemanticAutomationIntent.APPEND_FILE:
+                steps.append(f"Add {action.content or 'the content'} to {_file_label(action.file_path or action.target)}.")
+            elif action.intent == SemanticAutomationIntent.SAVE_CONTENT_AS_FILE:
+                steps.append(f"Save the content as {_file_label(action.file_path or action.target)}.")
+            elif action.intent == SemanticAutomationIntent.DELETE_FILE:
+                steps.append(f"deleting {_file_label(action.file_path or action.target or 'that file')}.")
+            elif action.intent == SemanticAutomationIntent.DRAFT_MESSAGE:
+                steps.append(f"Prepare a message to {action.recipient or 'the recipient'}.")
+            elif action.intent == SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION:
+                steps.append("ask for confirmation, then send the prepared message.")
+            elif action.intent == SemanticAutomationIntent.WRITE_NOTE:
+                steps.append(f"Open or focus {_title(action.app or 'the note app')} and type {action.content or 'the text'}.")
+            elif action.intent == SemanticAutomationIntent.APPEND_TO_NOTE:
+                steps.append(f"Add {action.content or 'the text'} to the current note.")
+
+        if _has_intent(actions, SemanticAutomationIntent.CREATE_FILE):
+            steps.append("Verify the file was created.")
+        if not steps and action_plan is not None:
+            steps = [_fallback_step_label(step.action, step.args) for step in action_plan.steps]
+        return [step for step in steps if step]
+
+    @staticmethod
+    def _short_spoken(display_text: str) -> str:
+        text = re.sub(r"\s+", " ", display_text).strip()
+        return text if len(text) <= 180 else f"{text[:177].rstrip()}..."
+
+
+def _parse_dry_run_request(text: str) -> DryRunRequest | None:
+    original = str(text or "").strip()
+    if not original:
+        return None
+    cleaned = re.sub(r"\s+", " ", original).strip(" \t\r\n")
+    candidate = cleaned.rstrip("?.!")
+    patterns: tuple[tuple[str, re.Pattern[str]], ...] = (
+        ("plan_colon", re.compile(r"^plan\s*:\s*(?P<subject>.+)$", re.I)),
+        ("dry_run_colon", re.compile(r"^dry\s+run\s*:\s*(?P<subject>.+)$", re.I)),
+        ("dry_run", re.compile(r"^dry\s+run(?:\s+this)?(?:\s+(?P<subject>.+))?$", re.I)),
+        ("plan_no_run", re.compile(r"^plan(?:\s+(?P<subject>.+?))?\s+but\s+don'?t\s+run\s+it$", re.I)),
+        ("what_before", re.compile(r"^what\s+will\s+you\s+do\s+before\s+(?P<subject>.+)$", re.I)),
+        ("tell_before", re.compile(r"^tell\s+me\s+what\s+you\s+would\s+do\s+before\s+(?P<subject>.+)$", re.I)),
+        ("steps_take", re.compile(r"^what\s+steps\s+would\s+you\s+take\s+to\s+(?P<subject>.+)$", re.I)),
+        ("explain_plan", re.compile(r"^explain\s+the\s+automation\s+plan(?:\s+for\s+(?P<subject>.+))?$", re.I)),
+        ("show_plan", re.compile(r"^show\s+me\s+the\s+plan\s+for\s+(?P<subject>.+)$", re.I)),
+    )
+    for trigger, pattern in patterns:
+        match = pattern.match(candidate)
+        if match:
+            subject = match.groupdict().get("subject") or ""
+            return DryRunRequest(original_text=original, plan_text=_normalize_plan_subject(subject), trigger=trigger)
+    return None
+
+
+def _normalize_plan_subject(subject: str) -> str:
+    text = re.sub(r"\s+", " ", str(subject or "").strip()).strip(" .?!:")
+    if not text or text == "this":
+        return ""
+    replacements = (
+        (r"^doing it$", ""),
+        (r"^opening\b", "open"),
+        (r"^creating\b", "create"),
+        (r"^saving\b", "save"),
+        (r"^sending\b", "send"),
+        (r"^deleting\s+(?:that\s+file|the\s+file|it)$", "delete it"),
+        (r"^sending\s+it$", "send it"),
+        (r"\band\s+searching\b", "and search"),
+        (r"\band\s+creating\b", "and create"),
+        (r"\band\s+saving\b", "and save"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+    return text.strip()
+
+
+def _title(value: str) -> str:
+    return " ".join(part.capitalize() for part in re.sub(r"\s+", " ", str(value or "").strip()).split())
+
+
+def _file_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "the file"
+    return PurePath(text).name or text
+
+
+def _location_suffix(value: Any) -> str:
+    text = str(value or "").strip()
+    if "/" not in text and "\\" not in text:
+        return ""
+    parent = PurePath(text).parent.name
+    return f" on your {_title(parent)}" if parent else ""
+
+
+def _has_intent(actions: list[SemanticAutomationAction], intent: Any) -> bool:
+    return any(action.intent == intent for action in actions)
+
+
+def _fallback_step_label(action: str, args: dict[str, Any]) -> str:
+    labels = {
+        "open": f"Open or focus {_title(str(args.get('app') or args.get('target') or 'the app'))}.",
+        "search": f"Search for {args.get('query') or 'the query'}.",
+        "select_address_bar": "Select the address or search bar.",
+        "replace_current_field": f"Type {args.get('query') or args.get('text') or args.get('content') or 'the text'}.",
+        "submit_current_field": "Submit the current field.",
+        "create_file": f"Create {_file_label(args.get('path') or args.get('filename') or args.get('name'))}.",
+        "write_file": f"Write {args.get('content') or 'the content'} into it.",
+    }
+    return labels.get(str(action or ""), f"Prepare the {str(action or 'automation')} step.")

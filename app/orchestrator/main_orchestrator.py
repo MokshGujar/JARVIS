@@ -26,9 +26,10 @@ class MainOrchestrator:
         self.registry = registry
         self.intent_router = intent_router or IntentRouter()
         self.scenario_policy = scenario_policy or ScenarioPolicy()
+        self.semantic_adapter = semantic_adapter or SemanticPlannerAdapter()
         self.task_planner = task_planner or TaskPlanner(
             scenario_policy=self.scenario_policy,
-            semantic_adapter=semantic_adapter,
+            semantic_adapter=self.semantic_adapter,
         )
         self.tool_executor = tool_executor
         self.enforce_policy = enforce_policy
@@ -37,6 +38,13 @@ class MainOrchestrator:
         return self.intent_router.route(user_text)
 
     def execute(self, context: ToolContext) -> dict[str, Any] | None:
+        dry_run_response = self.semantic_adapter.try_dry_run_response(
+            context.command,
+            context=self._automation_context(context),
+        )
+        if dry_run_response is not None:
+            return dry_run_response
+
         plan = self.task_planner.plan(context.command)
         if plan.is_multistep:
             executor = self.tool_executor or ToolExecutor(
@@ -93,6 +101,13 @@ class MainOrchestrator:
 
     def execute_text(self, user_text: str, **context_kwargs: Any) -> dict[str, Any] | None:
         return self.execute(ToolContext(command=user_text, **context_kwargs))
+
+    @staticmethod
+    def _automation_context(context: ToolContext) -> Any | None:
+        payload_context = context.payload.get("automation_context")
+        if payload_context is not None:
+            return payload_context
+        return context.metadata.get("automation_context")
 
     def _policy_block(self, context: ToolContext, route: RouteDecision, policy: PolicyDecision) -> dict[str, Any] | None:
         confirmed = bool(context.confirmation_state.get("confirmed") or context.payload.get("confirmed"))

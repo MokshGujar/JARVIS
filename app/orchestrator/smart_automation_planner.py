@@ -307,7 +307,7 @@ class SmartAutomationPlanner:
 
     def _plan_file_request(self, cleaned: str, original: str, context: AutomationContext | None) -> list[SemanticAutomationAction]:
         create_write = re.match(
-            r"^create a file(?: on (?P<location>desktop|documents|downloads|home))? named (?P<name>.+?) and write (?P<content>.+?) in it$",
+            r"^create a file(?: on (?P<location>desktop|documents|downloads|home))? named (?P<name>.+?) and write (?P<content>.+?)(?: in it)?$",
             cleaned,
         )
         if create_write:

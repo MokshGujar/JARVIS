@@ -45,6 +45,13 @@ class SmartAutomationPlannerTests(unittest.TestCase):
         self.assertEqual(result.semantic_actions[0].file_path, "desktop/meeting note.txt")
         self.assertEqual(result.semantic_actions[1].content, "meeting at 5 pm")
 
+    def test_create_file_and_write_dry_run_mapping_allows_omitted_in_it_suffix(self):
+        result = self.planner.plan("create a file on desktop named notes and write hello")
+
+        self.assertEqual(intents(result), [SemanticAutomationIntent.CREATE_FILE, SemanticAutomationIntent.WRITE_FILE])
+        self.assertEqual(result.semantic_actions[0].file_path, "desktop/notes.txt")
+        self.assertEqual(result.semantic_actions[1].content, "hello")
+
     def test_put_this_in_file_asks_followup_without_context(self):
         result = self.planner.plan("put this in a file")
 

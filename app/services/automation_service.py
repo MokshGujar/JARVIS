@@ -327,6 +327,7 @@ class AutomationService:
         self._pending_incomplete_command: dict | None = None
         self._pending_mark_action: dict | None = None
         self._pending_whatsapp_clarification: dict | None = None
+        self._pending_dry_run_plan: dict | None = None
         self._session_pending_state: dict[str, dict] = {}
         self._confirmation_prompt_emitted_ids: set[str] = set()
         self._last_browser_choice: str | None = None
@@ -459,6 +460,9 @@ class AutomationService:
         if self._has_pending_incomplete_command():
             return True
 
+        if self._has_pending_dry_run_plan() and lowered in {"yes", "y", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "stop"}:
+            return True
+
         if re.match(
             r"^(?:where\s+is\s+(?:it|that|that\s+file|the\s+file)|show\s+(?:me\s+)?(?:the\s+)?full\s+path|copy\s+(?:the\s+)?path)[.!?]*$",
             lowered,
@@ -525,6 +529,7 @@ class AutomationService:
         self._pending_incomplete_command = state.get("incomplete_command")
         self._pending_mark_action = state.get("mark_action")
         self._pending_whatsapp_clarification = state.get("whatsapp_clarification")
+        self._pending_dry_run_plan = state.get("dry_run_plan")
 
     def _save_session_pending_state(self, session_id: str) -> None:
         state = {
@@ -535,6 +540,7 @@ class AutomationService:
             "incomplete_command": self._pending_incomplete_command,
             "mark_action": self._pending_mark_action,
             "whatsapp_clarification": self._pending_whatsapp_clarification,
+            "dry_run_plan": self._pending_dry_run_plan,
         }
         if any(value is not None for value in state.values()):
             self._session_pending_state[session_id] = state
@@ -633,6 +639,40 @@ class AutomationService:
             return False
         return True
 
+    def _has_pending_dry_run_plan(self) -> bool:
+        pending = self._pending_dry_run_plan
+        if not pending:
+            return False
+        if time.time() > float(pending.get("expires_at") or 0):
+            self._pending_dry_run_plan = None
+            return False
+        return True
+
+    def _handle_pending_dry_run_response(self, text: str) -> dict[str, object] | None:
+        if not self._has_pending_dry_run_plan():
+            return None
+        lowered = self._normalize_spoken_command(text).lower().rstrip(".!?")
+        if lowered in {"no", "n", "cancel", "stop", "never mind"}:
+            self._pending_dry_run_plan = None
+            return {
+                "success": True,
+                "action": "dry_run_cancelled",
+                "message": "Cancelled the dry-run plan. No actions were run.",
+                "dry_run": True,
+                "executable": False,
+            }
+        if lowered in {"yes", "y", "do it", "confirm", "go ahead", "proceed"}:
+            self._pending_dry_run_plan = None
+            return {
+                "success": False,
+                "action": "dry_run_not_executable",
+                "message": "This dry-run plan is not executable yet. No actions were run.",
+                "dry_run": True,
+                "execution_deferred": True,
+                "executable": False,
+            }
+        return None
+
     def _stage_incomplete_command(self, kind: str, template: str, prompt: str) -> dict[str, object]:
         self._pending_incomplete_command = {
             "kind": kind,
@@ -715,6 +755,10 @@ class AutomationService:
 
         normalized_text = self._normalize_spoken_command(text)
         lowered = normalized_text.lower()
+
+        dry_run_followup = self._handle_pending_dry_run_response(normalized_text)
+        if dry_run_followup is not None:
+            return dry_run_followup
 
         if self._pending_mark_action is not None:
             return self._handle_mark_confirmation(text)
@@ -1091,9 +1135,20 @@ class AutomationService:
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
         plan = probe_orchestrator.task_planner.plan(command)
         if not plan.is_multistep:
+            dry_probe = probe_orchestrator.execute(ToolContext(command=command))
+            if isinstance(dry_probe, dict) and dry_probe.get("dry_run"):
+                pending = dry_probe.get("pending_dry_run_plan")
+                if isinstance(pending, dict):
+                    self._pending_dry_run_plan = pending
+                return dry_probe
             return None
         orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
-        return orchestrator.execute(ToolContext(command=command))
+        result = orchestrator.execute(ToolContext(command=command))
+        if isinstance(result, dict) and result.get("dry_run"):
+            pending = result.get("pending_dry_run_plan")
+            if isinstance(pending, dict):
+                self._pending_dry_run_plan = pending
+        return result
 
     def _execute_file_tool(self, command: str) -> Dict[str, str | bool] | None:
         return self._execute_tool_with_orchestrator(command, expected_tool="file")
