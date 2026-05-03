@@ -12,7 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
-from config import BASE_DIR
+from config import AUTOMATION_CONTEXT_ENABLED, BASE_DIR
+from app.orchestrator.automation_context import AutomationContext, AutomationContextStore
 from app.services.automation_file_ops import move_to_recycle_bin
 from app.services.browser_control_service import BrowserControlService
 from app.services.computer_control_service import ComputerControlService
@@ -329,6 +330,8 @@ class AutomationService:
         self._pending_whatsapp_clarification: dict | None = None
         self._pending_dry_run_plan: dict | None = None
         self._session_pending_state: dict[str, dict] = {}
+        self._automation_context_store = AutomationContextStore()
+        self._active_automation_context: AutomationContext | None = None
         self._confirmation_prompt_emitted_ids: set[str] = set()
         self._last_browser_choice: str | None = None
         self._browser_session_id = f"browser-{uuid.uuid4().hex[:10]}"
@@ -511,14 +514,24 @@ class AutomationService:
     def execute(self, command: str, *, session_id: str | None = None) -> Dict[str, object]:
         if session_id:
             self._load_session_pending_state(session_id)
-        previous_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
-        result = normalize_automation_response(self._execute_legacy(command))
-        current_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
-        self._clear_stale_confirmation_prompts(previous_confirmation_keys, current_confirmation_keys)
-        result = self._dedupe_confirmation_prompt(result, session_id=session_id)
-        if session_id:
-            self._save_session_pending_state(session_id)
-        return result
+        previous_context = self._active_automation_context
+        self._active_automation_context = self._automation_context_for(session_id)
+        try:
+            previous_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
+            result = normalize_automation_response(self._execute_legacy(command))
+            current_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
+            self._clear_stale_confirmation_prompts(previous_confirmation_keys, current_confirmation_keys)
+            result = self._dedupe_confirmation_prompt(result, session_id=session_id)
+            if session_id:
+                self._save_session_pending_state(session_id)
+            return result
+        finally:
+            self._active_automation_context = previous_context
+
+    def _automation_context_for(self, session_id: str | None) -> AutomationContext | None:
+        if not AUTOMATION_CONTEXT_ENABLED:
+            return None
+        return self._automation_context_store.get(session_id or "default")
 
     def _load_session_pending_state(self, session_id: str) -> None:
         state = self._session_pending_state.get(session_id) or {}
@@ -1133,9 +1146,24 @@ class AutomationService:
 
     def _execute_multistep_tool_plan(self, command: str) -> Dict[str, str | bool] | None:
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
+        tool_context = ToolContext(
+            command=command,
+            payload={"automation_context": self._active_automation_context} if self._active_automation_context is not None else {},
+        )
+        semantic_result = probe_orchestrator.semantic_adapter.try_live_result(
+            command,
+            context=self._active_automation_context,
+            scenario_policy=probe_orchestrator.scenario_policy,
+        )
+        if isinstance(semantic_result, dict):
+            return semantic_result
+        if semantic_result is not None:
+            orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
+            return orchestrator.execute(tool_context)
+
         plan = probe_orchestrator.task_planner.plan(command)
         if not plan.is_multistep:
-            dry_probe = probe_orchestrator.execute(ToolContext(command=command))
+            dry_probe = probe_orchestrator.execute(tool_context)
             if isinstance(dry_probe, dict) and dry_probe.get("dry_run"):
                 pending = dry_probe.get("pending_dry_run_plan")
                 if isinstance(pending, dict):
@@ -1143,7 +1171,7 @@ class AutomationService:
                 return dry_probe
             return None
         orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
-        result = orchestrator.execute(ToolContext(command=command))
+        result = orchestrator.execute(tool_context)
         if isinstance(result, dict) and result.get("dry_run"):
             pending = result.get("pending_dry_run_plan")
             if isinstance(pending, dict):

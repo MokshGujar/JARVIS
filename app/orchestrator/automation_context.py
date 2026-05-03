@@ -191,8 +191,19 @@ class AutomationContext:
         query = result.get("query") or data.get("query") if isinstance(result, dict) else None
         url = result.get("url") or data.get("url") if isinstance(result, dict) else None
         title = result.get("title") or data.get("title") if isinstance(result, dict) else None
+        resolved_args = dict(result.get("resolved_args") or {}) if isinstance(result, dict) and isinstance(result.get("resolved_args"), dict) else {}
+        if content is None:
+            content = resolved_args.get("content") or resolved_args.get("text")
+        if query is None:
+            query = resolved_args.get("query")
+        app = resolved_args.get("app") or resolved_args.get("target")
 
         self.last_tool_used = tool_name or self.last_tool_used
+        if app and action in {"open", "app_open", "focus", "app_focus"}:
+            self.previous_active_app = self.active_app
+            self.active_app = str(app)
+            self.last_opened_app = str(app) if action in {"open", "app_open"} else self.last_opened_app
+            self.last_focused_app = str(app)
         if path:
             self.last_file_path = str(path)
             if action == "create_file":
@@ -203,12 +214,18 @@ class AutomationContext:
                 self.last_read_file_path = str(path)
         if content is not None:
             self.last_content = self.redact_sensitive_text(str(content))
+            if action in {"type_text", "type_into_active_field", "append_text", "paste_text"}:
+                self.last_typed_text = self.redact_sensitive_text(str(content))
+                self.current_document_context = self.current_document_context or {"app": self.active_app}
         if query:
             self.last_browser_query = str(query)
+            self.last_search_engine = self.last_search_engine or "google"
+            self.current_browser_context = {"query": str(query), "browser": self.active_app or self.last_browser}
         if url:
             self.last_opened_url = str(url)
         if title:
             self.last_page_title = str(title)
+            self.active_window_title = str(title)
 
         payload = dict(result) if isinstance(result, dict) else {}
         if success:

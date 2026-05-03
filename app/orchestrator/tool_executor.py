@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.orchestrator.action_plan import ActionPlan, ActionStep
+from app.orchestrator.automation_context import ActionFingerprint
 from app.orchestrator.intent_router import RouteDecision
 from app.orchestrator.scenario_policy import ScenarioPolicy
 from app.orchestrator.tool_registry import ToolRegistry
@@ -109,6 +110,7 @@ class ToolExecutor:
             }
             step_results.append(result)
             step_outputs[step.step_id] = result
+            self._update_automation_context(plan, context, step, result)
 
             if not bool(result.get("success")):
                 logger.debug("Step failed: %s %s", step.step_id, result)
@@ -125,13 +127,15 @@ class ToolExecutor:
 
         message = self._aggregate_success_message(step_results)
         logger.debug("Action plan completed: %s", message)
-        return self._final_result(
+        final_result = self._final_result(
             plan,
             success=True,
             action="multi_step",
             message=message,
             step_results=step_results,
         )
+        self._record_successful_fingerprints(plan, context, final_result)
+        return final_result
 
     def _policy_block(self, step: ActionStep, context: ToolContext) -> dict[str, Any] | None:
         decision = self.scenario_policy.evaluate(self._route_for_step(step))
@@ -272,4 +276,82 @@ class ToolExecutor:
             result["message"] = formatted
             result["display_text"] = formatted
             result["spoken_text"] = formatted
+        if plan.metadata:
+            result["metadata"] = dict(plan.metadata)
+            if plan.metadata.get("semantic_execution"):
+                result["semantic_execution"] = True
+                result["semantic_actions"] = list(plan.metadata.get("semantic_actions") or [])
         return result
+
+    def _update_automation_context(self, plan: ActionPlan, context: ToolContext, step: ActionStep, result: dict[str, Any]) -> None:
+        if not plan.metadata.get("semantic_execution"):
+            return
+        automation_context = self._automation_context(context)
+        if automation_context is None:
+            return
+        semantic_by_step = dict(plan.metadata.get("semantic_step_actions") or {})
+        semantic_action = semantic_by_step.get(step.step_id)
+        if isinstance(semantic_action, dict):
+            self._update_context_from_semantic_payload(automation_context, semantic_action)
+        automation_context.update_from_tool_result(result)
+
+    def _record_successful_fingerprints(self, plan: ActionPlan, context: ToolContext, result: dict[str, Any]) -> None:
+        if not result.get("success"):
+            return
+        automation_context = self._automation_context(context)
+        if automation_context is None:
+            return
+        for item in plan.metadata.get("fingerprints") or []:
+            if not isinstance(item, dict) or not item.get("mutating"):
+                continue
+            try:
+                fingerprint = ActionFingerprint(
+                    request_id=item.get("request_id"),
+                    action_id=str(item.get("action_id") or ""),
+                    original_user_text=str(item.get("original_user_text") or ""),
+                    corrected_text=str(item.get("corrected_text") or ""),
+                    semantic_action=str(item.get("semantic_action") or ""),
+                    target=item.get("target"),
+                    content_hash=item.get("content_hash"),
+                    tool_plan_hash=item.get("tool_plan_hash"),
+                    timestamp=float(item.get("timestamp") or 0),
+                    mutating=True,
+                )
+                automation_context.record_fingerprint(fingerprint)
+            except Exception:
+                logger.debug("Could not record semantic fingerprint: %s", item, exc_info=True)
+
+    @staticmethod
+    def _automation_context(context: ToolContext) -> Any | None:
+        payload_context = context.payload.get("automation_context")
+        if payload_context is not None:
+            return payload_context
+        return context.metadata.get("automation_context")
+
+    @staticmethod
+    def _update_context_from_semantic_payload(automation_context: Any, action: dict[str, Any]) -> None:
+        intent = str(action.get("intent") or "")
+        automation_context.last_semantic_intent = intent or automation_context.last_semantic_intent
+        automation_context.last_semantic_target = action.get("target") or automation_context.last_semantic_target
+        content = action.get("content")
+        if content is not None:
+            automation_context.last_content = automation_context.redact_sensitive_text(str(content))
+            if intent in {"WRITE_NOTE", "APPEND_TO_NOTE"}:
+                automation_context.last_typed_text = automation_context.redact_sensitive_text(str(content))
+        app = action.get("app")
+        if app:
+            automation_context.previous_active_app = automation_context.active_app
+            automation_context.active_app = str(app)
+            automation_context.last_opened_app = str(app)
+            automation_context.last_focused_app = str(app)
+        file_path = action.get("file_path")
+        if file_path:
+            automation_context.last_file_path = str(file_path)
+        query = action.get("query")
+        if query:
+            automation_context.last_browser_query = str(query)
+            automation_context.current_browser_context = {"query": str(query)}
+        url = action.get("url")
+        if url:
+            automation_context.last_opened_url = str(url)
+        automation_context.touch()

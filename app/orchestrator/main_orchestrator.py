@@ -38,12 +38,28 @@ class MainOrchestrator:
         return self.intent_router.route(user_text)
 
     def execute(self, context: ToolContext) -> dict[str, Any] | None:
+        automation_context = self._automation_context(context)
         dry_run_response = self.semantic_adapter.try_dry_run_response(
             context.command,
-            context=self._automation_context(context),
+            context=automation_context,
         )
         if dry_run_response is not None:
             return dry_run_response
+
+        semantic_result = self.semantic_adapter.try_live_result(
+            context.command,
+            context=automation_context,
+            scenario_policy=self.scenario_policy,
+        )
+        if isinstance(semantic_result, dict):
+            return semantic_result
+        if semantic_result is not None:
+            executor = self.tool_executor or ToolExecutor(
+                registry=self.registry,
+                scenario_policy=self.scenario_policy,
+                enforce_policy=self.enforce_policy,
+            )
+            return executor.execute(semantic_result, context)
 
         plan = self.task_planner.plan(context.command)
         if plan.is_multistep:

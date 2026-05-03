@@ -57,6 +57,7 @@ class AppInteractionTool(BaseTool):
             "refresh",
             "click_text",
             "click_coordinates",
+            "read_window_title",
         ],
         metadata={"extraction_phase": "ui_automation_boundary"},
     )
@@ -164,6 +165,8 @@ class AppInteractionTool(BaseTool):
             return self._click_text(adapter, str(args.get("text") or args.get("label") or ""))
         if action == "click_coordinates":
             return self._click_coordinates(adapter, args)
+        if action == "read_window_title":
+            return self._read_window_title(adapter)
         if action == "verify_text_present":
             return self._with_verification(
                 self._adapter_call(adapter, "verify_text_present", str(args.get("text") or ""), planned_action=action),
@@ -228,6 +231,18 @@ class AppInteractionTool(BaseTool):
         except Exception:
             return self._blocked("click_coordinates", "Tell me the coordinates to click.", error="missing_coordinates")
         return self._with_verification(self._adapter_call(adapter, "click_coordinates", x, y, planned_action="click_coordinates"), "likely_success")
+
+    def _read_window_title(self, adapter: Any) -> dict[str, Any]:
+        active = self._adapter_call(adapter, "get_active_window", planned_action="read_window_title")
+        if not bool(active.get("success")):
+            active["action"] = "read_window_title"
+            return self._with_verification(active, "failed")
+        title = str(active.get("title") or active.get("data", {}).get("title") or "").strip()
+        active["action"] = "read_window_title"
+        active["title"] = title
+        active["message"] = f"Active window: {title}." if title else "I could not read the active window title."
+        active["success"] = bool(title)
+        return self._with_verification(active, "verified" if title else "failed")
 
     def _ensure_focused_window(self, adapter: Any, action: str) -> dict[str, Any] | None:
         if not self.config.require_focused_window:

@@ -7,8 +7,16 @@ from dataclasses import dataclass
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
 
-from config import AUTOMATION_CONTEXT_TTL_SECONDS, AUTOMATION_DRY_RUN_ENABLED, SEMANTIC_PLANNER_ENABLED, SMART_AUTOMATION_ENABLED
+from config import (
+    AUTOMATION_CONTEXT_TTL_SECONDS,
+    AUTOMATION_DRY_RUN_ENABLED,
+    AUTOMATION_DUPLICATE_PROTECTION_ENABLED,
+    SEMANTIC_PLANNER_ENABLED,
+    SEMANTIC_SAFE_EXECUTION_ENABLED,
+    SMART_AUTOMATION_ENABLED,
+)
 from app.orchestrator.action_plan import ActionPlan
+from app.orchestrator.semantic_action_mapper import MUTATING_INTENTS, SemanticActionMapper
 
 if TYPE_CHECKING:
     from app.orchestrator.automation_context import AutomationContext
@@ -39,11 +47,17 @@ class SemanticPlannerAdapter:
         smart_automation_enabled: bool | None = None,
         semantic_planner_enabled: bool | None = None,
         dry_run_enabled: bool | None = None,
+        safe_execution_enabled: bool | None = None,
+        duplicate_protection_enabled: bool | None = None,
         planner_factory: Callable[[], SmartAutomationPlanner] | None = None,
     ) -> None:
         self.smart_automation_enabled = SMART_AUTOMATION_ENABLED if smart_automation_enabled is None else bool(smart_automation_enabled)
         self.semantic_planner_enabled = SEMANTIC_PLANNER_ENABLED if semantic_planner_enabled is None else bool(semantic_planner_enabled)
         self.dry_run_enabled = AUTOMATION_DRY_RUN_ENABLED if dry_run_enabled is None else bool(dry_run_enabled)
+        self.safe_execution_enabled = SEMANTIC_SAFE_EXECUTION_ENABLED if safe_execution_enabled is None else bool(safe_execution_enabled)
+        self.duplicate_protection_enabled = (
+            AUTOMATION_DUPLICATE_PROTECTION_ENABLED if duplicate_protection_enabled is None else bool(duplicate_protection_enabled)
+        )
         self._planner_factory = planner_factory
         self._planner: SmartAutomationPlanner | None = None
         self.last_semantic_result: Any | None = None
@@ -54,6 +68,37 @@ class SemanticPlannerAdapter:
 
     def try_plan_action(self, text: str, context: AutomationContext | None = None) -> ActionPlan | None:
         return None
+
+    def try_live_result(self, text: str, context: AutomationContext | None = None, scenario_policy: Any | None = None) -> ActionPlan | dict[str, Any] | None:
+        if is_explicit_dry_run_request(text) or not self.enabled or not self.safe_execution_enabled:
+            return None
+
+        planner = self._get_planner()
+        result = planner.plan(text, context=context, dry_run=False)
+        self.last_semantic_result = result
+        actions = list(getattr(result, "semantic_actions", []) or [])
+        if not actions:
+            return None
+
+        missing_fields = list(getattr(result, "missing_fields", []) or [])
+        if missing_fields:
+            return self._missing_fields_response(result)
+
+        duplicate_response, fingerprints = self._duplicate_response(actions, result, context)
+        if duplicate_response is not None:
+            return duplicate_response
+
+        mapper = SemanticActionMapper(scenario_policy=scenario_policy)
+        mapped = mapper.map_actions(
+            original_text=getattr(result, "original_text", text),
+            corrected_text=getattr(result, "corrected_text", text),
+            actions=actions,
+            context=context,
+            fingerprints=fingerprints,
+        )
+        if mapped.response is not None:
+            return mapped.response
+        return mapped.plan
 
     def try_dry_run_response(self, text: str, context: AutomationContext | None = None) -> dict[str, Any] | None:
         request = _parse_dry_run_request(text)
@@ -79,6 +124,53 @@ class SemanticPlannerAdapter:
 
                 self._planner = SmartAutomationPlanner()
         return self._planner
+
+    def _missing_fields_response(self, result: Any) -> dict[str, Any]:
+        question = getattr(result, "follow_up_question", None) or self._missing_context_message(list(getattr(result, "missing_fields", []) or []))
+        missing_fields = list(getattr(result, "missing_fields", []) or [])
+        return {
+            "success": False,
+            "action": "semantic_followup_required",
+            "message": question,
+            "display_text": question,
+            "spoken_text": question,
+            "requires_followup": True,
+            "missing_fields": missing_fields,
+            "follow_up_question": question,
+            "semantic_execution": True,
+            "executable": False,
+        }
+
+    def _duplicate_response(self, actions: list[SemanticAutomationAction], result: Any, context: AutomationContext | None) -> tuple[dict[str, Any] | None, list[Any]]:
+        if not self.duplicate_protection_enabled or context is None:
+            return None, []
+        fingerprints: list[Any] = []
+        for action in actions:
+            mutating = action.intent in MUTATING_INTENTS
+            fingerprint = context.create_fingerprint(
+                original_user_text=getattr(result, "original_text", ""),
+                corrected_text=getattr(result, "corrected_text", None),
+                semantic_action=action.intent.value,
+                target=action.target or action.file_path or action.recipient or action.app,
+                content=action.content,
+                tool_plan={"intent": action.intent.value, "preferred_tool": action.preferred_tool},
+                mutating=mutating,
+            )
+            if context.is_duplicate(fingerprint):
+                message = "This looks like the same action again. Should I repeat it?"
+                return {
+                    "success": False,
+                    "action": "duplicate_semantic_action",
+                    "message": message,
+                    "display_text": message,
+                    "spoken_text": message,
+                    "requires_followup": True,
+                    "semantic_execution": True,
+                    "executable": False,
+                    "duplicate_risk": True,
+                }, []
+            fingerprints.append(fingerprint)
+        return None, fingerprints
 
     def _unavailable_response(self, request: DryRunRequest) -> dict[str, Any]:
         message = "Semantic dry-run planning is unavailable right now. No actions were run."

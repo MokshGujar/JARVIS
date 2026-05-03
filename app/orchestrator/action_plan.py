@@ -42,6 +42,7 @@ class ActionPlan:
     requires_confirmation: bool = False
     requires_face_step_up: bool = False
     requires_voice_permission: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -51,4 +52,5 @@ class ActionPlan:
             "requires_confirmation": self.requires_confirmation,
             "requires_face_step_up": self.requires_face_step_up,
             "requires_voice_permission": self.requires_voice_permission,
+            "metadata": dict(self.metadata),
         }

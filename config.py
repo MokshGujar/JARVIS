@@ -321,6 +321,7 @@ PHONE_BRIDGE_TOKEN = os.getenv("PHONE_BRIDGE_TOKEN", "").strip()
 AUTOMATION_ENABLED = os.getenv("AUTOMATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SMART_AUTOMATION_ENABLED = os.getenv("SMART_AUTOMATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SEMANTIC_PLANNER_ENABLED = os.getenv("SEMANTIC_PLANNER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+SEMANTIC_SAFE_EXECUTION_ENABLED = os.getenv("SEMANTIC_SAFE_EXECUTION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 AUTOMATION_CONTEXT_ENABLED = os.getenv("AUTOMATION_CONTEXT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 AUTOMATION_CONTEXT_TTL_SECONDS = _getenv_int("AUTOMATION_CONTEXT_TTL_SECONDS", 900)
 AUTOMATION_CONTEXT_REDACT_SENSITIVE = os.getenv("AUTOMATION_CONTEXT_REDACT_SENSITIVE", "true").strip().lower() in {"1", "true", "yes", "on"}

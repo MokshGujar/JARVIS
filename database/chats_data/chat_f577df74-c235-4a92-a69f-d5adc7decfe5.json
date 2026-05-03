@@ -1,0 +1,133 @@
+{
+  "session_id": "f577df74-c235-4a92-a69f-d5adc7decfe5",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jawis. Hello, Jawis. Hello, Jais."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jawis. Hello, Jawis. Hello, Jais."
+    },
+    {
+      "role": "assistant",
+      "content": "I think there's been a mix-up with my name, Sir - it's Jarvis, actually."
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, nice to finally get the name right, Sir. What can I help you with today?"
+    },
+    {
+      "role": "user",
+      "content": "Uh create a file on desktop name semantic test and write hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Created semantic test in Desktop."
+    },
+    {
+      "role": "user",
+      "content": "Or put World in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Oh, look at that!"
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "Put World in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Put World in it."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Deleted."
+    },
+    {
+      "role": "assistant",
+      "content": "Face verification is required before I can run that command."
+    },
+    {
+      "role": "user",
+      "content": "Hello Janice, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello Janice, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": "I think there's been a mistake, Sir - my name is Jarvis, not Janice."
+    },
+    {
+      "role": "user",
+      "content": "Oh, we have to make sure that we have to be."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Oh, we have to make sure that we have to be."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm not quite following, Sir - could you rephrase that or tell me what's on your mind?"
+    },
+    {
+      "role": "user",
+      "content": "This was not my doing, I just said Hello Jarvis, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "This was not my doing, I just said Hello Jarvis, how are you?"
+    },
+    {
+      "role": "assistant",
+      "content": "You're right, you did say hello and asked how I was, Sir - I'm doing well, thanks for asking."
+    }
+  ]
+}
