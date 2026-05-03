@@ -16,7 +16,7 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         with open("frontend/script.js", encoding="utf-8") as handle:
             script = handle.read()
 
-        self.assertIn("function interruptCurrentResponse()", script)
+        self.assertIn("function interruptCurrentResponse(reason = 'user_interrupt')", script)
         self.assertIn("activeStreamController?.abort()", script)
         self.assertIn("cancelThinkingSound()", script)
         self.assertIn("stopBrowserSpeech()", script)
@@ -30,34 +30,28 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         with open("frontend/script.js", encoding="utf-8") as handle:
             script = handle.read()
 
-        self.assertIn("this.ttsTextBuffer = '';", script)
-        self.assertIn("pushText(chunk, generationId = null)", script)
-        self.assertIn("_findSafeBoundary(text, allowTail)", script)
-        self.assertIn("async _synthesizeAndEnqueue(text, generationId, speakerGeneration)", script)
+        self.assertIn("class VoiceAudioQueue", script)
+        self.assertIn("async playFinalText(text, turnId)", script)
         self.assertIn("fetch(`${API}/tts`", script)
-        self.assertIn("ttsPlayer.enqueue(btoa(binary), generationId || this.currentGenerationId || null)", script)
-        self.assertIn("words.length >= 5", script)
-        self.assertIn("words.length >= 7", script)
+        self.assertIn("body: JSON.stringify({ text: content, turn_id: turnId, request_id: turnId })", script)
         self.assertIn("tts: false", script)
-        self.assertIn("browserStreamSpeaker.pushText(chunkText, clientRequestId)", script)
+        self.assertIn("await voiceAudioQueue?.playFinalText(fullResponse, clientRequestId);", script)
+        self.assertIn("Phase 4H uses end-only final TTS", script)
+        self.assertNotIn("browserStreamSpeaker.pushText(chunkText, clientRequestId);", script)
         self.assertNotIn("ttsPlayer.enqueue(data.audio", script)
 
     def test_thinking_audio_starts_before_stream_and_waits_before_final_tts(self):
         with open("frontend/script.js", encoding="utf-8") as handle:
             script = handle.read()
 
-        self.assertIn("class ThinkingAudioPlayer", script)
+        self.assertIn("class VoiceAudioQueue", script)
         self.assertIn("scheduleThinkingSound(text, clientRequestId);", script)
         self.assertIn("function scheduleThinkingSound(text, requestId = null)", script)
         self.assertIn("fetch(`${API}/tts/thinking`", script)
-        self.assertIn("let thinkingAudioPlayedForRequestId = null;", script)
-        self.assertIn("thinkingAudioPlayedForRequestId === resolvedRequestId", script)
-        self.assertIn("let finalTtsQueuedForRequestId = null;", script)
-        self.assertIn("async function waitForThinkingSoundBeforeFinalTts(generationId = null)", script)
-        self.assertIn("await waitForThinkingSoundBeforeFinalTts(item.generationId);", script)
-        self.assertIn("function fadeThinkingSound(durationMs = 180)", script)
-        self.assertIn("thinkingAudioPlayer.fadeOut(durationMs)", script)
-        self.assertIn("fadeThinkingSound(180);", script)
+        self.assertIn("this.thinkingPlayedTurns = new Set();", script)
+        self.assertIn("this.finalPlayedTurns = new Set();", script)
+        self.assertIn("if (this.activeKind === 'thinking' && this.activeTurnId === turnId", script)
+        self.assertIn("await this.activePromise.catch(() => {});", script)
 
     def test_backend_stt_barge_in_listens_during_assistant_audio(self):
         with open("frontend/script.js", encoding="utf-8") as handle:
@@ -172,6 +166,8 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         self.assertIn("thinkingAudioSkipForFastSemantic = thinkingAudio.skip_for_fast_semantic !== false;", script)
         self.assertIn("thinkingAudioSkipForEmptyTranscript = thinkingAudio.skip_for_empty_transcript !== false;", script)
         self.assertIn("thinkingAudioSkipForClarification = thinkingAudio.skip_for_clarification !== false;", script)
+        self.assertIn("thinkingAudioSkipForConfirmation = thinkingAudio.skip_for_confirmation !== false;", script)
+        self.assertIn("thinkingAudioSkipForGreeting = thinkingAudio.skip_for_greeting !== false;", script)
         self.assertIn("function shouldSkipThinkingAudioForText(text)", script)
         self.assertIn("port waldenet", script)
         self.assertIn("thinkingAudioMinDelayMs", script)

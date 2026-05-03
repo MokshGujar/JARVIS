@@ -28,7 +28,7 @@ it saves all in-memory sessions to disk.
 """
 
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -58,6 +58,7 @@ from app.models import (
     ChatRequest,
     ChatResponse,
     TTSRequest,
+    ThinkingTTSRequest,
     FaceEnrollStartRequest,
     FaceEnrollSampleRequest,
     FaceEnrollBatchRequest,
@@ -128,10 +129,18 @@ from config import (
     THINKING_AUDIO_FINAL_TTS_WAIT_TIMEOUT_MS, THINKING_AUDIO_INTERRUPTIBLE,
     THINKING_AUDIO_CACHE_ENABLED, THINKING_AUDIO_DEBUG, THINKING_AUDIO_MODE,
     THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC, THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT,
-    THINKING_AUDIO_SKIP_FOR_CLARIFICATION, THINKING_AUDIO_MIN_DELAY_MS,
+    THINKING_AUDIO_SKIP_FOR_CLARIFICATION, THINKING_AUDIO_SKIP_FOR_CONFIRMATION,
+    THINKING_AUDIO_SKIP_FOR_GREETING, THINKING_AUDIO_ONE_PER_TURN,
+    THINKING_AUDIO_ALLOW_FINISH_BEFORE_TTS, THINKING_AUDIO_MAX_DURATION_MS,
+    THINKING_AUDIO_FADE_OUT_MS, THINKING_AUDIO_MIN_DELAY_MS,
+    VOICE_AUDIO_SINGLE_QUEUE, VOICE_AUDIO_ALLOW_OVERLAP, TTS_CANCEL_STALE_TURNS,
+    VOICE_BARGE_IN_ENABLED, VOICE_INTERRUPT_ON_NEW_SPEECH,
+    VOICE_AUTO_RESTART_MIC_AFTER_TTS, VOICE_INTERRUPT_DEBOUNCE_MS,
+    VOICE_DO_NOT_INTERRUPT_ON_TTS_END,
     STT_MIN_RECORD_SECONDS, STT_END_SILENCE_SECONDS, STT_MAX_RECORD_SECONDS, STT_SPEECH_PADDING_MS, STT_CAPTURE_MODE,
     STT_PROVIDER_CACHE_ENABLED, PARAKEET_PRELOAD_ON_STARTUP, STT_WARMUP_ON_STARTUP, STT_FAIL_FAST_ON_WARMUP_ERROR,
     STT_DOMAIN_CORRECTION_ENABLED, STT_EMPTY_TRANSCRIPT_BEHAVIOR, STT_EMPTY_TRANSCRIPT_PROMPT,
+    STT_EMPTY_TRANSCRIPT_PLAY_TTS, STT_EMPTY_TRANSCRIPT_RESET_MIC,
     FACE_GATE_ENABLED, FACE_GATE_SCOPE, FACE_IN_APP_RECOGNITION_ENABLED, FACE_STEP_UP_FOR_TOOLS_ENABLED,
     FACE_STATUS_IN_APP_ENABLED, FACE_VERIFY_IN_APP_ENABLED,
     SMART_AUTOMATION_ENABLED, SEMANTIC_PLANNER_ENABLED, SEMANTIC_SAFE_EXECUTION_ENABLED,
@@ -1164,7 +1173,21 @@ def _thinking_audio_runtime_config() -> dict[str, object]:
         "skip_for_fast_semantic": bool(THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC),
         "skip_for_empty_transcript": bool(THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT),
         "skip_for_clarification": bool(THINKING_AUDIO_SKIP_FOR_CLARIFICATION),
+        "skip_for_confirmation": bool(THINKING_AUDIO_SKIP_FOR_CONFIRMATION),
+        "skip_for_greeting": bool(THINKING_AUDIO_SKIP_FOR_GREETING),
+        "one_per_turn": bool(THINKING_AUDIO_ONE_PER_TURN),
+        "allow_finish_before_tts": bool(THINKING_AUDIO_ALLOW_FINISH_BEFORE_TTS),
+        "max_duration_ms": max(250, int(THINKING_AUDIO_MAX_DURATION_MS or 1800)),
+        "fade_out_ms": max(0, int(THINKING_AUDIO_FADE_OUT_MS or 120)),
         "min_delay_ms": max(0, int(THINKING_AUDIO_MIN_DELAY_MS or 0)),
+        "voice_audio_single_queue": bool(VOICE_AUDIO_SINGLE_QUEUE),
+        "voice_audio_allow_overlap": bool(VOICE_AUDIO_ALLOW_OVERLAP),
+        "tts_cancel_stale_turns": bool(TTS_CANCEL_STALE_TURNS),
+        "voice_barge_in_enabled": bool(VOICE_BARGE_IN_ENABLED),
+        "voice_interrupt_on_new_speech": bool(VOICE_INTERRUPT_ON_NEW_SPEECH),
+        "voice_auto_restart_mic_after_tts": bool(VOICE_AUTO_RESTART_MIC_AFTER_TTS),
+        "voice_interrupt_debounce_ms": max(0, int(VOICE_INTERRUPT_DEBOUNCE_MS or 800)),
+        "voice_do_not_interrupt_on_tts_end": bool(VOICE_DO_NOT_INTERRUPT_ON_TTS_END),
     }
 
 
@@ -1385,6 +1408,8 @@ def _stt_capture_runtime_config() -> dict[str, object]:
         "domain_correction_enabled": _stt_runtime_bool(section, "STT_DOMAIN_CORRECTION_ENABLED", "parakeet_domain_correction_enabled", bool(STT_DOMAIN_CORRECTION_ENABLED)),
         "empty_transcript_behavior": str(os.getenv("STT_EMPTY_TRANSCRIPT_BEHAVIOR", "") or section.get("empty_transcript_behavior") or STT_EMPTY_TRANSCRIPT_BEHAVIOR),
         "empty_transcript_prompt": str(os.getenv("STT_EMPTY_TRANSCRIPT_PROMPT", "") or section.get("empty_transcript_prompt") or STT_EMPTY_TRANSCRIPT_PROMPT),
+        "empty_transcript_play_tts": bool(STT_EMPTY_TRANSCRIPT_PLAY_TTS),
+        "empty_transcript_reset_mic": bool(STT_EMPTY_TRANSCRIPT_RESET_MIC),
         "live_call_required": bool(readiness.get("live_call_required", False)),
         "preferred_local_provider": "nemo_parakeet",
         "min_record_seconds": STT_MIN_RECORD_SECONDS,
@@ -2431,7 +2456,7 @@ async def stt_warmup(request: Request):
 
 
 @app.post("/tts/thinking")
-async def thinking_text_to_speech():
+async def thinking_text_to_speech(request: ThinkingTTSRequest | None = Body(default=None)):
     tts_config = _tts_runtime_config()
     thinking_config = dict(tts_config.get("thinking_audio") or {})
     if not bool(thinking_config.get("enabled", True)):
@@ -2480,7 +2505,11 @@ async def thinking_text_to_speech():
         media_type="audio/mpeg",
         headers={
             "Cache-Control": "no-cache",
+            "X-Jarvis-Audio-Type": "thinking",
+            "X-Jarvis-Turn-Id": str(getattr(request, "turn_id", None) or ""),
+            "X-Jarvis-Request-Id": str(getattr(request, "request_id", None) or ""),
             "X-Jarvis-Thinking-Phrase": phrase,
+            "X-Jarvis-Duration-Estimate-Ms": str(min(int(thinking_config.get("max_duration_ms") or 1800), int(float(thinking_config.get("max_seconds") or 2.0) * 1000))),
         },
     )
 
@@ -2530,7 +2559,13 @@ async def text_to_speech(request: TTSRequest):
     return StreamingResponse(
         generate(),
         media_type="audio/mpeg",
-        headers={"Cache-Control": "no-cache"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Jarvis-Audio-Type": "final",
+            "X-Jarvis-Turn-Id": str(getattr(request, "turn_id", None) or ""),
+            "X-Jarvis-Request-Id": str(getattr(request, "request_id", None) or ""),
+            "X-Jarvis-TTS-Text-Length": str(len(text)),
+        },
     )
 
 

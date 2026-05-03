@@ -94,3 +94,10 @@ class JarvisActions(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
+    turn_id: Optional[str] = None
+    request_id: Optional[str] = None
+
+
+class ThinkingTTSRequest(BaseModel):
+    turn_id: Optional[str] = None
+    request_id: Optional[str] = None

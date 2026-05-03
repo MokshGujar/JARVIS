@@ -73,9 +73,16 @@ class EdgeTtsConfigTests(unittest.TestCase):
         self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_fast_semantic"])
         self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_empty_transcript"])
         self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_clarification"])
-        self.assertGreaterEqual(payload["tts"]["thinking_audio"]["min_delay_ms"], 0)
+        self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_confirmation"])
+        self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_greeting"])
+        self.assertTrue(payload["tts"]["thinking_audio"]["one_per_turn"])
+        self.assertTrue(payload["tts"]["thinking_audio"]["voice_audio_single_queue"])
+        self.assertFalse(payload["tts"]["thinking_audio"]["voice_audio_allow_overlap"])
+        self.assertGreaterEqual(payload["tts"]["thinking_audio"]["min_delay_ms"], 400)
         self.assertIn("min_record_seconds", payload["stt"])
         self.assertIn("end_silence_seconds", payload["stt"])
+        self.assertFalse(payload["stt"]["empty_transcript_play_tts"])
+        self.assertTrue(payload["stt"]["empty_transcript_reset_mic"])
 
     def test_tts_endpoint_rejects_empty_text(self):
         with self.assertRaises(HTTPException) as ctx:
@@ -85,10 +92,14 @@ class EdgeTtsConfigTests(unittest.TestCase):
 
     def test_tts_endpoint_passes_configured_edge_options(self):
         with patch.object(main_module.edge_tts, "Communicate", FakeCommunicate):
-            response = asyncio.run(main_module.text_to_speech(SimpleNamespace(text="Hello Jarvis")))
+            response = asyncio.run(main_module.text_to_speech(SimpleNamespace(text="Hello Jarvis", turn_id="turn-1", request_id="req-1")))
             chunks = asyncio.run(_collect_stream(response))
 
         self.assertEqual(chunks, [b"audio"])
+        self.assertEqual(response.headers["X-Jarvis-Audio-Type"], "final")
+        self.assertEqual(response.headers["X-Jarvis-Turn-Id"], "turn-1")
+        self.assertEqual(response.headers["X-Jarvis-Request-Id"], "req-1")
+        self.assertEqual(response.headers["X-Jarvis-TTS-Text-Length"], str(len("Hello Jarvis")))
         self.assertEqual(FakeCommunicate.last_call["rate"], main_module._tts_runtime_config()["rate"])
         self.assertEqual(FakeCommunicate.last_call["volume"], main_module._tts_runtime_config()["volume"])
         self.assertEqual(FakeCommunicate.last_call["pitch"], main_module._tts_runtime_config()["pitch"])
@@ -155,10 +166,14 @@ class EdgeTtsConfigTests(unittest.TestCase):
                 },
             ),
         ):
-            response = asyncio.run(main_module.thinking_text_to_speech())
+            response = asyncio.run(main_module.thinking_text_to_speech(SimpleNamespace(turn_id="turn-2", request_id="req-2")))
             chunks = asyncio.run(_collect_stream(response))
 
         self.assertEqual(chunks, [b"audio"])
+        self.assertEqual(response.headers["X-Jarvis-Audio-Type"], "thinking")
+        self.assertEqual(response.headers["X-Jarvis-Turn-Id"], "turn-2")
+        self.assertEqual(response.headers["X-Jarvis-Request-Id"], "req-2")
+        self.assertEqual(response.headers["X-Jarvis-Thinking-Phrase"], "On it.")
         self.assertEqual(FakeCommunicate.last_call["text"], "On it.")
         self.assertEqual(FakeCommunicate.last_call["rate"], "+20%")
 

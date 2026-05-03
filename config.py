@@ -209,7 +209,21 @@ THINKING_AUDIO_MODE = os.getenv("THINKING_AUDIO_MODE", "smart").strip().lower() 
 THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC = os.getenv("THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC", "true").strip().lower() in {"1", "true", "yes", "on"}
 THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT = os.getenv("THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT", "true").strip().lower() in {"1", "true", "yes", "on"}
 THINKING_AUDIO_SKIP_FOR_CLARIFICATION = os.getenv("THINKING_AUDIO_SKIP_FOR_CLARIFICATION", "true").strip().lower() in {"1", "true", "yes", "on"}
-THINKING_AUDIO_MIN_DELAY_MS = _getenv_int("THINKING_AUDIO_MIN_DELAY_MS", 250)
+THINKING_AUDIO_SKIP_FOR_CONFIRMATION = os.getenv("THINKING_AUDIO_SKIP_FOR_CONFIRMATION", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_SKIP_FOR_GREETING = os.getenv("THINKING_AUDIO_SKIP_FOR_GREETING", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_ONE_PER_TURN = os.getenv("THINKING_AUDIO_ONE_PER_TURN", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_ALLOW_FINISH_BEFORE_TTS = os.getenv("THINKING_AUDIO_ALLOW_FINISH_BEFORE_TTS", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_MAX_DURATION_MS = _getenv_int("THINKING_AUDIO_MAX_DURATION_MS", 1800)
+THINKING_AUDIO_FADE_OUT_MS = _getenv_int("THINKING_AUDIO_FADE_OUT_MS", 120)
+THINKING_AUDIO_MIN_DELAY_MS = _getenv_int("THINKING_AUDIO_MIN_DELAY_MS", 400)
+VOICE_AUDIO_SINGLE_QUEUE = os.getenv("VOICE_AUDIO_SINGLE_QUEUE", "true").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_AUDIO_ALLOW_OVERLAP = os.getenv("VOICE_AUDIO_ALLOW_OVERLAP", "false").strip().lower() in {"1", "true", "yes", "on"}
+TTS_CANCEL_STALE_TURNS = os.getenv("TTS_CANCEL_STALE_TURNS", "true").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_BARGE_IN_ENABLED = os.getenv("VOICE_BARGE_IN_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_INTERRUPT_ON_NEW_SPEECH = os.getenv("VOICE_INTERRUPT_ON_NEW_SPEECH", "true").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_AUTO_RESTART_MIC_AFTER_TTS = os.getenv("VOICE_AUTO_RESTART_MIC_AFTER_TTS", "true").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_INTERRUPT_DEBOUNCE_MS = _getenv_int("VOICE_INTERRUPT_DEBOUNCE_MS", 800)
+VOICE_DO_NOT_INTERRUPT_ON_TTS_END = os.getenv("VOICE_DO_NOT_INTERRUPT_ON_TTS_END", "true").strip().lower() in {"1", "true", "yes", "on"}
 TTS_VOICE = EDGE_TTS_VOICE
 TTS_RATE = EDGE_TTS_RATE
 
@@ -231,6 +245,8 @@ STT_DOMAIN_CORRECTION_CASE_SENSITIVE = os.getenv("STT_DOMAIN_CORRECTION_CASE_SEN
 STT_DOMAIN_CORRECTION_WORD_BOUNDARY = os.getenv("STT_DOMAIN_CORRECTION_WORD_BOUNDARY", "true").strip().lower() in {"1", "true", "yes", "on"}
 STT_EMPTY_TRANSCRIPT_BEHAVIOR = os.getenv("STT_EMPTY_TRANSCRIPT_BEHAVIOR", "short_prompt").strip().lower() or "short_prompt"
 STT_EMPTY_TRANSCRIPT_PROMPT = os.getenv("STT_EMPTY_TRANSCRIPT_PROMPT", "I didn't catch that.").strip() or "I didn't catch that."
+STT_EMPTY_TRANSCRIPT_PLAY_TTS = os.getenv("STT_EMPTY_TRANSCRIPT_PLAY_TTS", "false").strip().lower() in {"1", "true", "yes", "on"}
+STT_EMPTY_TRANSCRIPT_RESET_MIC = os.getenv("STT_EMPTY_TRANSCRIPT_RESET_MIC", "true").strip().lower() in {"1", "true", "yes", "on"}
 # Voice identity runtime:
 # - nemo_titanet: production backend for centralized speaker verification
 # - fingerprint: dependency-free local/test fallback

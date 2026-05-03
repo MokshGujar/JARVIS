@@ -193,7 +193,23 @@ let thinkingAudioMode = 'smart';
 let thinkingAudioSkipForFastSemantic = true;
 let thinkingAudioSkipForEmptyTranscript = true;
 let thinkingAudioSkipForClarification = true;
-let thinkingAudioMinDelayMs = 250;
+let thinkingAudioSkipForConfirmation = true;
+let thinkingAudioSkipForGreeting = true;
+let thinkingAudioOnePerTurn = true;
+let thinkingAudioAllowFinishBeforeTts = true;
+let thinkingAudioMaxDurationMs = 1800;
+let thinkingAudioFadeOutMs = 120;
+let thinkingAudioMinDelayMs = 400;
+let voiceAudioSingleQueue = true;
+let voiceAudioAllowOverlap = false;
+let ttsCancelStaleTurns = true;
+let sttEmptyTranscriptPlayTts = false;
+let sttEmptyTranscriptResetMic = true;
+let voiceBargeInEnabled = true;
+let voiceInterruptOnNewSpeech = true;
+let voiceAutoRestartMicAfterTts = true;
+let voiceInterruptDebounceMs = 800;
+let voiceDoNotInterruptOnTtsEnd = true;
 const backgroundTaskPolls = new Map();
 let voiceGuardVerifiedUntil = 0;
 let activeStreamController = null;
@@ -210,6 +226,8 @@ let voiceSilenceLoopActive = false;
 let voiceSpeechDetected = false;
 let voiceLastSpeechAt = 0;
 let voiceSendTriggered = false;
+let voiceTurnManager = null;
+let voiceAudioQueue = null;
 
 function isCurrentStreamPayload(data, expectedRequestId) {
     const payloadRequestId = data && typeof data === 'object' ? (data.client_request_id || null) : null;
@@ -238,6 +256,8 @@ async function fetchRuntimeVoiceConfig() {
         sttSpeechPaddingMs = Math.max(0, Number(stt.speech_padding_ms || sttSpeechPaddingMs));
         sttEmptyTranscriptBehavior = String(stt.empty_transcript_behavior || sttEmptyTranscriptBehavior || 'short_prompt').toLowerCase();
         sttEmptyTranscriptPrompt = String(stt.empty_transcript_prompt || sttEmptyTranscriptPrompt || "I didn't catch that.");
+        sttEmptyTranscriptPlayTts = stt.empty_transcript_play_tts === true;
+        sttEmptyTranscriptResetMic = stt.empty_transcript_reset_mic !== false;
         const faceInApp = d && d.face_in_app ? d.face_in_app : {};
         faceStatusInAppEnabled = faceInApp.status_enabled === true;
         faceVerifyInAppEnabled = faceInApp.verify_enabled === true;
@@ -250,6 +270,20 @@ async function fetchRuntimeVoiceConfig() {
         thinkingAudioSkipForFastSemantic = thinkingAudio.skip_for_fast_semantic !== false;
         thinkingAudioSkipForEmptyTranscript = thinkingAudio.skip_for_empty_transcript !== false;
         thinkingAudioSkipForClarification = thinkingAudio.skip_for_clarification !== false;
+        thinkingAudioSkipForConfirmation = thinkingAudio.skip_for_confirmation !== false;
+        thinkingAudioSkipForGreeting = thinkingAudio.skip_for_greeting !== false;
+        thinkingAudioOnePerTurn = thinkingAudio.one_per_turn !== false;
+        thinkingAudioAllowFinishBeforeTts = thinkingAudio.allow_finish_before_tts !== false;
+        thinkingAudioMaxDurationMs = Math.max(250, Number(thinkingAudio.max_duration_ms || thinkingAudioMaxDurationMs));
+        thinkingAudioFadeOutMs = Math.max(0, Number(thinkingAudio.fade_out_ms ?? thinkingAudioFadeOutMs));
+        voiceAudioSingleQueue = thinkingAudio.voice_audio_single_queue !== false;
+        voiceAudioAllowOverlap = thinkingAudio.voice_audio_allow_overlap === true;
+        ttsCancelStaleTurns = thinkingAudio.tts_cancel_stale_turns !== false;
+        voiceBargeInEnabled = thinkingAudio.voice_barge_in_enabled !== false;
+        voiceInterruptOnNewSpeech = thinkingAudio.voice_interrupt_on_new_speech !== false;
+        voiceAutoRestartMicAfterTts = thinkingAudio.voice_auto_restart_mic_after_tts !== false;
+        voiceInterruptDebounceMs = Math.max(0, Number(thinkingAudio.voice_interrupt_debounce_ms ?? voiceInterruptDebounceMs));
+        voiceDoNotInterruptOnTtsEnd = thinkingAudio.voice_do_not_interrupt_on_tts_end !== false;
         thinkingAudioMinDelayMs = Math.max(0, Number(thinkingAudio.min_delay_ms ?? thinkingAudioMinDelayMs));
     } catch (_) {}
 }
@@ -270,6 +304,7 @@ function isBackendSttCaptureMode() {
 function isAssistantAudioActive() {
     return !!(
         preStarterPlayer?.playing ||
+        voiceAudioQueue?.isActive?.() ||
         thinkingAudioPlaying ||
         thinkingAudioPlayer?.playing ||
         ttsPlayer?.playing ||
@@ -281,7 +316,7 @@ function isAssistantAudioActive() {
 }
 
 function shouldAllowBackendBargeIn() {
-    return !!(autoListenMode && isBackendSttCaptureMode() && (isStreaming || isAssistantAudioActive()));
+    return !!(voiceBargeInEnabled && autoListenMode && isBackendSttCaptureMode() && (isStreaming || isAssistantAudioActive()));
 }
 
 /*
@@ -909,18 +944,25 @@ async function transcribeCapturedVoiceAudio(voiceAudioBase64) {
 
 function handleEmptyTranscript() {
     cancelThinkingSound();
+    if (voiceTurnManager) voiceTurnManager.transition('transcript_empty');
+    console.debug(`[VOICE-STT] empty_transcript turn=${voiceTurnManager?.activeTurnId || 'none'}`);
+    console.debug('[VOICE-STT] skipped_chat reason=empty_transcript');
+    console.debug('[VOICE-STT] skipped_thinking reason=empty_transcript');
     setJarvisVisualState(isListening ? 'listening' : 'idle');
     if (sttEmptyTranscriptBehavior !== 'silent') {
         const prompt = sttEmptyTranscriptPrompt || "I didn't catch that.";
         showToast(prompt);
         if (speechWidgetText) speechWidgetText.textContent = prompt;
     }
+    if (sttEmptyTranscriptResetMic) maybeRestartListening();
 }
 
 async function sendCapturedVoiceCommand() {
     if (finishingVoiceCommandCapture || voiceSendInFlight) return false;
     finishingVoiceCommandCapture = true;
     voiceSendInFlight = true;
+    const voiceTurnId = voiceTurnManager?.activeTurnId || voiceTurnManager?.beginTurn(null, 'transcribing') || buildClientRequestId();
+    if (voiceTurnManager) voiceTurnManager.transition('transcribing', voiceTurnId);
     try {
         if (sttSpeechPaddingMs > 0) {
             await new Promise(resolve => setTimeout(resolve, sttSpeechPaddingMs));
@@ -930,12 +972,14 @@ async function sendCapturedVoiceCommand() {
         const transcript = String(payload?.text || '').trim();
         if (!transcript) {
             handleEmptyTranscript();
+            voiceSendInFlight = false;
             return false;
         }
         if (speechWidgetText) speechWidgetText.textContent = transcript;
         Promise.resolve(sendMessage(transcript, {
             inputSource: 'voice',
             voiceAudioBase64,
+            turnId: voiceTurnId,
         })).finally(() => {
             voiceSendInFlight = false;
             maybeRestartListening();
@@ -945,6 +989,7 @@ async function sendCapturedVoiceCommand() {
         voiceSendInFlight = false;
         if ((error?.message || error) === 'empty_transcript') {
             handleEmptyTranscript();
+            voiceSendInFlight = false;
             return false;
         }
         showToast(`Voice transcription failed: ${error?.message || error}`);
@@ -964,6 +1009,8 @@ async function sendPendingVoiceTranscript() {
     pendingSendTranscript = null;
     finishingVoiceCommandCapture = true;
     voiceSendInFlight = true;
+    const voiceTurnId = voiceTurnManager?.activeTurnId || voiceTurnManager?.beginTurn(null, 'transcribing') || buildClientRequestId();
+    if (voiceTurnManager) voiceTurnManager.transition('transcribing', voiceTurnId);
     try {
         if (sttSpeechPaddingMs > 0) {
             await new Promise(resolve => setTimeout(resolve, sttSpeechPaddingMs));
@@ -972,6 +1019,7 @@ async function sendPendingVoiceTranscript() {
         Promise.resolve(sendMessage(transcriptToSend, {
             inputSource: 'voice',
             voiceAudioBase64,
+            turnId: voiceTurnId,
         })).finally(() => {
             voiceSendInFlight = false;
             maybeRestartListening();
@@ -1344,7 +1392,265 @@ class ThinkingAudioPlayer {
     }
 }
 
+class VoiceTurnManager {
+    constructor() {
+        this.activeTurnId = null;
+        this.state = 'idle';
+        this.interruptedTurnIds = new Set();
+        this.interruptSentTurnIds = new Set();
+        this.lastInterruptAt = 0;
+    }
+
+    beginTurn(turnId = null, state = 'chat_streaming') {
+        const nextTurnId = turnId || buildClientRequestId();
+        if (this.activeTurnId && this.activeTurnId !== nextTurnId && voiceAudioQueue) {
+            voiceAudioQueue.cancelTurn(this.activeTurnId, 'new_recording');
+        }
+        this.activeTurnId = nextTurnId;
+        this.interruptedTurnIds.delete(nextTurnId);
+        this.transition(state, nextTurnId);
+        return nextTurnId;
+    }
+
+    beginRecording() {
+        return this.beginTurn(buildClientRequestId(), 'recording');
+    }
+
+    isCurrent(turnId) {
+        return !!turnId && this.activeTurnId === turnId && !this.interruptedTurnIds.has(turnId);
+    }
+
+    transition(state, turnId = this.activeTurnId) {
+        if (turnId && this.activeTurnId && turnId !== this.activeTurnId) return;
+        this.state = state;
+        if (state === 'recording') setJarvisVisualState('listening');
+        else if (state === 'thinking_pending' || state === 'thinking_playing' || state === 'chat_streaming' || state === 'tts_pending') setJarvisVisualState('thinking');
+        else if (state === 'tts_playing') setJarvisVisualState('speaking');
+        else if (state === 'interrupted') setJarvisVisualState('interrupted');
+        else if (state === 'idle' && !isListening && !isStreaming && !isAssistantAudioActive()) setJarvisVisualState('idle');
+        console.debug(`[VOICE-TURN] turn=${turnId || 'none'} state=${state}`);
+    }
+
+    markInterrupted(turnId = this.activeTurnId) {
+        if (!turnId) return;
+        this.interruptedTurnIds.add(turnId);
+        this.transition('interrupted', turnId);
+    }
+
+    interrupt(reason = 'user_interrupt') {
+        const turnId = this.activeTurnId || activeClientRequestId;
+        const now = Date.now();
+        if (turnId && this.interruptSentTurnIds.has(turnId)) return false;
+        if (now - this.lastInterruptAt < Math.max(0, Number(voiceInterruptDebounceMs || 0))) return false;
+        this.lastInterruptAt = now;
+        if (turnId) {
+            this.interruptSentTurnIds.add(turnId);
+            this.markInterrupted(turnId);
+        }
+        console.debug(`[VOICE-AUDIO] turn=${turnId || 'none'} event=audio_cancel reason=${reason}`);
+        return true;
+    }
+
+    complete(turnId = this.activeTurnId) {
+        if (turnId && this.activeTurnId && turnId !== this.activeTurnId) return;
+        this.transition('idle', turnId);
+        if (!isStreaming && !isAssistantAudioActive()) {
+            this.activeTurnId = null;
+        }
+    }
+}
+
+class VoiceAudioQueue {
+    constructor() {
+        this.audio = document.createElement('audio');
+        this.audio.preload = 'auto';
+        this.activeKind = null;
+        this.activeTurnId = null;
+        this.activeUrl = null;
+        this.activeController = null;
+        this.activePromise = Promise.resolve();
+        this.activeResolve = null;
+        this.pendingThinkingTimer = null;
+        this.thinkingPlayedTurns = new Set();
+        this.finalPlayedTurns = new Set();
+    }
+
+    isActive() {
+        return !!(this.activeKind || this.pendingThinkingTimer);
+    }
+
+    scheduleThinking(text, turnId) {
+        clearTimeout(this.pendingThinkingTimer);
+        this.pendingThinkingTimer = null;
+        if (!settings.thinkingSounds || shouldSkipThinkingAudioForText(text)) {
+            console.debug(`[VOICE-STT] skipped_thinking reason=policy turn=${turnId || 'none'}`);
+            return Promise.resolve();
+        }
+        const resolvedTurnId = turnId || voiceTurnManager?.activeTurnId || activeClientRequestId || buildClientRequestId();
+        if (thinkingAudioOnePerTurn && this.thinkingPlayedTurns.has(resolvedTurnId)) return Promise.resolve();
+        if (!voiceTurnManager?.isCurrent(resolvedTurnId)) return Promise.resolve();
+        voiceTurnManager.transition('thinking_pending', resolvedTurnId);
+        const delay = thinkingAudioMode === 'smart' ? Math.max(0, Number(thinkingAudioMinDelayMs || 0)) : 0;
+        return new Promise(resolve => {
+            this.pendingThinkingTimer = setTimeout(() => {
+                this.pendingThinkingTimer = null;
+                this.playThinking(resolvedTurnId).finally(resolve);
+            }, delay);
+        });
+    }
+
+    async playThinking(turnId) {
+        if (!voiceTurnManager?.isCurrent(turnId)) return;
+        if (thinkingAudioOnePerTurn && this.thinkingPlayedTurns.has(turnId)) return;
+        if (this.activeKind && !voiceAudioAllowOverlap) return;
+        this.thinkingPlayedTurns.add(turnId);
+        this.activeController = new AbortController();
+        try {
+            const res = await fetch(`${API}/tts/thinking`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ turn_id: turnId, request_id: turnId }),
+                signal: this.activeController.signal,
+            });
+            if (!res.ok) throw new Error('thinking_tts_failed');
+            const buffer = await res.arrayBuffer();
+            if (!buffer || buffer.byteLength === 0 || !voiceTurnManager?.isCurrent(turnId)) return;
+            await this._playBuffer(buffer, turnId, 'thinking');
+        } catch (_) {
+            if (voiceTurnManager?.isCurrent(turnId)) voiceTurnManager.transition(isStreaming ? 'chat_streaming' : 'idle', turnId);
+        }
+    }
+
+    async playFinalText(text, turnId) {
+        const content = String(text || '').trim();
+        if (!content) {
+            console.debug(`[VOICE-TTS] skipped reason=empty_text turn_id=${turnId || 'none'}`);
+            return;
+        }
+        if (!ttsPlayer?.enabled) return;
+        if (!voiceTurnManager?.isCurrent(turnId)) {
+            console.debug(`[VOICE-TTS] skipped reason=stale_turn turn_id=${turnId || 'none'}`);
+            return;
+        }
+        if (this.finalPlayedTurns.has(turnId)) return;
+        this.finalPlayedTurns.add(turnId);
+        clearTimeout(this.pendingThinkingTimer);
+        this.pendingThinkingTimer = null;
+        voiceTurnManager.transition('tts_pending', turnId);
+        if (this.activeKind === 'thinking' && this.activeTurnId === turnId && !voiceAudioAllowOverlap) {
+            if (thinkingAudioAllowFinishBeforeTts && thinkingAudioFinishBeforeFinalTts && !thinkingAudioStopOnFinalTts) {
+                await this.activePromise.catch(() => {});
+            } else {
+                this.cancelActive('final_tts_ready', thinkingAudioFadeOutMs);
+            }
+        }
+        if (!voiceTurnManager?.isCurrent(turnId)) {
+            console.debug(`[VOICE-TTS] skipped reason=interrupted turn_id=${turnId || 'none'}`);
+            return;
+        }
+        console.debug(`[VOICE-TTS] request_start turn_id=${turnId}`);
+        this.activeController = new AbortController();
+        try {
+            const res = await fetch(`${API}/tts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: content, turn_id: turnId, request_id: turnId }),
+                signal: this.activeController.signal,
+            });
+            if (!res.ok) throw new Error('final_tts_failed');
+            const buffer = await res.arrayBuffer();
+            console.debug(`[VOICE-TTS] request_done turn_id=${turnId}`);
+            if (!buffer || buffer.byteLength === 0 || !voiceTurnManager?.isCurrent(turnId)) return;
+            await this._playBuffer(buffer, turnId, 'final');
+        } catch (error) {
+            console.debug(`[VOICE-TTS] skipped reason=${error?.name === 'AbortError' ? 'interrupted' : 'tts_error'} turn_id=${turnId}`);
+            if (voiceTurnManager?.isCurrent(turnId)) voiceTurnManager.transition('error_recovering', turnId);
+        } finally {
+            if (voiceTurnManager?.isCurrent(turnId)) voiceTurnManager.complete(turnId);
+        }
+    }
+
+    _playBuffer(buffer, turnId, kind) {
+        if (!voiceTurnManager?.isCurrent(turnId)) return Promise.resolve();
+        if (this.activeKind && !voiceAudioAllowOverlap) this.cancelActive('new_audio');
+        const blob = new Blob([buffer], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        this.activeKind = kind;
+        this.activeTurnId = turnId;
+        this.activeUrl = url;
+        this.audio.src = url;
+        this.audio.currentTime = 0;
+        const eventName = kind === 'thinking' ? 'thinking' : 'tts';
+        console.debug(`[VOICE-AUDIO] turn=${turnId} event=${eventName}_start`);
+        if (kind === 'thinking') voiceTurnManager.transition('thinking_playing', turnId);
+        if (kind === 'final') {
+            console.debug(`[VOICE-TTS] playback_start turn_id=${turnId}`);
+            voiceTurnManager.transition('tts_playing', turnId);
+        }
+        this.activePromise = new Promise(resolve => {
+            this.activeResolve = resolve;
+            const maxTimer = kind === 'thinking'
+                ? setTimeout(() => this.cancelActive('thinking_max_duration'), Math.max(250, Number(thinkingAudioMaxDurationMs || 1800)))
+                : null;
+            const done = () => {
+                if (maxTimer) clearTimeout(maxTimer);
+                this.audio.onended = null;
+                this.audio.onerror = null;
+                try { this.audio.pause(); } catch (_) {}
+                this.audio.removeAttribute('src');
+                try { this.audio.load(); } catch (_) {}
+                if (this.activeUrl) URL.revokeObjectURL(this.activeUrl);
+                this.activeUrl = null;
+                this.activeResolve = null;
+                const completedKind = this.activeKind;
+                this.activeKind = null;
+                this.activeTurnId = null;
+                console.debug(`[VOICE-AUDIO] turn=${turnId} event=${eventName}_end`);
+                if (completedKind === 'final') {
+                    console.debug(`[VOICE-TTS] playback_end turn_id=${turnId}`);
+                    if (voiceAutoRestartMicAfterTts) maybeRestartListening();
+                } else if (voiceTurnManager?.isCurrent(turnId)) {
+                    voiceTurnManager.transition(isStreaming ? 'chat_streaming' : 'idle', turnId);
+                }
+                resolve();
+            };
+            this.audio.onended = done;
+            this.audio.onerror = done;
+            const p = this.audio.play();
+            if (p) p.catch(done);
+        });
+        return this.activePromise;
+    }
+
+    cancelActive(reason = 'user_interrupt', fadeMs = 0) {
+        clearTimeout(this.pendingThinkingTimer);
+        this.pendingThinkingTimer = null;
+        try { this.activeController?.abort(); } catch (_) {}
+        this.activeController = null;
+        console.debug(`[VOICE-AUDIO] turn=${this.activeTurnId || voiceTurnManager?.activeTurnId || 'none'} event=audio_cancel reason=${reason}`);
+        try { this.audio.pause(); } catch (_) {}
+        this.audio.onended = null;
+        this.audio.onerror = null;
+        this.audio.removeAttribute('src');
+        try { this.audio.load(); } catch (_) {}
+        if (this.activeUrl) URL.revokeObjectURL(this.activeUrl);
+        this.activeUrl = null;
+        this.activeKind = null;
+        this.activeTurnId = null;
+        if (this.activeResolve) this.activeResolve();
+        this.activeResolve = null;
+        this.activePromise = Promise.resolve();
+    }
+
+    cancelTurn(turnId, reason = 'stale_turn') {
+        if (this.activeTurnId === turnId || !turnId) this.cancelActive(reason);
+        clearTimeout(this.pendingThinkingTimer);
+        this.pendingThinkingTimer = null;
+    }
+}
+
 function playThinkingSound(requestId = null) {
+    if (voiceAudioQueue) return voiceAudioQueue.scheduleThinking('', requestId || activeClientRequestId);
     const resolvedRequestId = requestId || activeClientRequestId || buildClientRequestId();
     if (thinkingAudioPlayedForRequestId === resolvedRequestId) {
         return thinkingSoundPromise || Promise.resolve();
@@ -1400,6 +1706,12 @@ function shouldSkipThinkingAudioForText(text) {
     if (thinkingAudioMode !== 'smart') return false;
     const value = String(text || '').trim().toLowerCase();
     if (!value) return thinkingAudioSkipForEmptyTranscript;
+    if (thinkingAudioSkipForGreeting && /^(?:hi|hello|hey|hey jarvis|hello jarvis|good morning|good afternoon|good evening)[.!?]*$/.test(value)) {
+        return true;
+    }
+    if (thinkingAudioSkipForConfirmation && /^(?:yes|no|cancel|confirm|do it|go ahead|proceed|send it|delete it|close it|run it|never mind)[.!?]*$/.test(value)) {
+        return true;
+    }
     if (thinkingAudioSkipForClarification && /^(?:port waldenet|i'?ll put wald in it)[.!?]*$/.test(value)) {
         return true;
     }
@@ -1413,6 +1725,7 @@ function shouldSkipThinkingAudioForText(text) {
 }
 
 function scheduleThinkingSound(text, requestId = null) {
+    if (voiceAudioQueue) return voiceAudioQueue.scheduleThinking(text, requestId || activeClientRequestId);
     clearTimeout(thinkingSoundDelayTimer);
     if (shouldSkipThinkingAudioForText(text)) {
         thinkingSoundPromise = Promise.resolve();
@@ -1432,6 +1745,7 @@ function scheduleThinkingSound(text, requestId = null) {
 }
 
 function cancelThinkingSound(resetRequestTracking = true) {
+    if (voiceAudioQueue) voiceAudioQueue.cancelActive('cancel_thinking');
     thinkingSoundGeneration += 1;
     clearTimeout(thinkingSoundDelayTimer);
     clearTimeout(thinkingSoundMaxTimer);
@@ -1445,6 +1759,7 @@ function cancelThinkingSound(resetRequestTracking = true) {
 }
 
 function fadeThinkingSound(durationMs = 180) {
+    if (voiceAudioQueue) voiceAudioQueue.cancelActive('fade_thinking', durationMs);
     thinkingSoundGeneration += 1;
     clearTimeout(thinkingSoundDelayTimer);
     clearTimeout(thinkingSoundMaxTimer);
@@ -1457,6 +1772,10 @@ function fadeThinkingSound(durationMs = 180) {
 }
 
 async function waitForThinkingSoundBeforeFinalTts(generationId = null) {
+    if (voiceAudioQueue && voiceAudioQueue.activeKind === 'thinking') {
+        await voiceAudioQueue.activePromise.catch(() => {});
+        return;
+    }
     if (!thinkingAudioFinishBeforeFinalTts || thinkingAudioStopOnFinalTts) {
         fadeThinkingSound(180);
         return;
@@ -1507,6 +1826,7 @@ function isJarvisSpeakingOrStreaming() {
     return !!(
         isStreaming ||
         preStarterPlayer?.playing ||
+        voiceAudioQueue?.isActive?.() ||
         thinkingAudioPlayer?.playing ||
         (ttsPlayer && (ttsPlayer.playing || ttsPlayer.queue.length > 0)) ||
         (browserStreamSpeaker && (browserStreamSpeaker.playing || browserStreamSpeaker.queue.length > 0 || browserStreamSpeaker.ttsTextBuffer.trim()))
@@ -1514,21 +1834,23 @@ function isJarvisSpeakingOrStreaming() {
 }
 
 function handleVoiceBargeInSpeechStart() {
+    if (!voiceInterruptOnNewSpeech) return;
     if (bargeInInterruptSent) return;
     bargeInInterruptSent = true;
-    interruptCurrentResponse();
+    interruptCurrentResponse('barge_in');
     setJarvisVisualState('listening');
 }
 
-function interruptCurrentResponse() {
+function interruptCurrentResponse(reason = 'user_interrupt') {
     interruptingForBargeIn = true;
     suppressAutoListenUntil = Date.now() + 800;
     const interruptedSessionId = sessionId;
     const interruptedRequestId = activeClientRequestId;
+    const shouldNotifyBackend = voiceTurnManager ? voiceTurnManager.interrupt(reason) : true;
     invalidateActiveStepUp();
     try { activeStreamController?.abort(); } catch (_) {}
     activeStreamController = null;
-    if (interruptedSessionId) {
+    if (interruptedSessionId && shouldNotifyBackend) {
         fetch(`${API}/chat/interrupt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1539,6 +1861,7 @@ function interruptCurrentResponse() {
         }).catch(() => {});
     }
     cancelThinkingSound();
+    if (voiceAudioQueue) voiceAudioQueue.cancelTurn(interruptedRequestId, reason);
     stopBrowserSpeech();
     if (browserStreamSpeaker) browserStreamSpeaker.reset();
     if (ttsPlayer) ttsPlayer.stop();
@@ -1994,6 +2317,8 @@ async function init() {
         return;
     }
     loadSettings();
+    voiceTurnManager = new VoiceTurnManager();
+    voiceAudioQueue = new VoiceAudioQueue();
     ttsPlayer = new TTSPlayer();
     browserStreamSpeaker = new BrowserStreamSpeaker();
     thinkingAudioPlayer = new ThinkingAudioPlayer();
@@ -2471,6 +2796,7 @@ async function startListening(options = {}) {
     isListening = true;
     bargeInListeningMode = allowBargeIn;
     bargeInInterruptSent = false;
+    if (!allowBargeIn && voiceTurnManager) voiceTurnManager.beginRecording();
     listeningStartedAt = Date.now();
     pendingSendTranscript = null;
     clearTimeout(speechRestartTimeout);
@@ -3807,7 +4133,7 @@ async function sendVisionMessage(textOverride) {
     const text = rawText || (currentMode === 'screen'
         ? 'Briefly explain the main thing visible on the shared screen. Keep it short and skip minor UI details.'
         : 'Briefly explain the main thing visible in the camera view. Keep it short.');
-    if (isStreaming) interruptCurrentResponse();
+    if (isStreaming || isAssistantAudioActive()) interruptCurrentResponse('new_request');
 
     beginVisionActivity(text);
 
@@ -3844,13 +4170,14 @@ async function sendVisionMessage(textOverride) {
     addMessage('user', text);
     addTypingIndicator();
     const clientRequestId = buildClientRequestId();
+    if (voiceTurnManager) voiceTurnManager.beginTurn(clientRequestId, 'chat_streaming');
     isStreaming = true;
     stopBrowserSpeech();
     if (browserStreamSpeaker) browserStreamSpeaker.reset(clientRequestId);
     if (ttsPlayer) { ttsPlayer.reset(clientRequestId); ttsPlayer.unlock(); }
     if (preStarterPlayer) preStarterPlayer.unlock();
     scheduleThinkingSound(text, clientRequestId);
-    setJarvisVisualState('thinking');
+    if (voiceTurnManager) voiceTurnManager.transition('chat_streaming', clientRequestId);
     maybeRestartListening(120);
     const controller = new AbortController();
     activeStreamController = controller;
@@ -3919,12 +4246,8 @@ async function sendVisionMessage(textOverride) {
                 if (data.error) throw new Error(data.error);
                 if (data.chunk) {
                     responseText += data.chunk;
-                    if (browserStreamSpeaker) {
-                        browserStreamSpeaker.pushText(data.chunk, clientRequestId);
-                    }
                 }
                 if (data.done) {
-                    if (browserStreamSpeaker) browserStreamSpeaker.finish();
                     streamDone = true;
                     break;
                 }
@@ -3948,6 +4271,10 @@ async function sendVisionMessage(textOverride) {
                 ? `Analysis finished. Capture again if you want Jarvis to inspect a newer ${describeDisplaySurface(lastScreenShareKind)}.`
                 : 'Analysis finished. Camera preview can stay live for another question or capture.'
         );
+        isStreaming = false;
+        if (voiceTurnManager?.isCurrent(clientRequestId)) {
+            await voiceAudioQueue?.playFinalText(responseText, clientRequestId);
+        }
     } catch (err) {
         removeTypingIndicator();
         cancelThinkingSound();
@@ -3964,7 +4291,7 @@ async function sendVisionMessage(textOverride) {
         interruptingForBargeIn = false;
         updateVisionModeUI();
         if (!isJarvisSpeakingOrStreaming() && !isListening) setJarvisVisualState('idle');
-        maybeRestartListening();
+        if (!isAssistantAudioActive()) maybeRestartListening();
     }
 }
 
@@ -4030,7 +4357,7 @@ async function sendMessage(textOverride, options = {}) {
     // Step 1: Get the message text, trimming whitespace
     const text = (textOverride || messageInput.value).trim();
     if (!text) return;  // Ignore empty messages
-    if (isStreaming) interruptCurrentResponse();
+    if (isStreaming || isAssistantAudioActive()) interruptCurrentResponse('new_request');
 
     if (await handleLocalWakeOrSleep(text)) {
         messageInput.value = '';
@@ -4048,7 +4375,8 @@ async function sendMessage(textOverride, options = {}) {
     addMessage('user', text);
     addTypingIndicator();
 
-    const clientRequestId = buildClientRequestId();
+    const clientRequestId = options.turnId || buildClientRequestId();
+    if (voiceTurnManager) voiceTurnManager.beginTurn(clientRequestId, 'chat_streaming');
 
     // Step 4: Mark this request as active.
     isStreaming = true;
@@ -4061,7 +4389,7 @@ async function sendMessage(textOverride, options = {}) {
     if (preStarterPlayer) preStarterPlayer.unlock();
     cancelThinkingSound();
     scheduleThinkingSound(text, clientRequestId);
-    setJarvisVisualState('thinking');
+    if (voiceTurnManager) voiceTurnManager.transition('chat_streaming', clientRequestId);
     maybeRestartListening(120);
 
     // Step 6: Choose the endpoint based on the current mode
@@ -4205,7 +4533,7 @@ async function sendMessage(textOverride, options = {}) {
                             textSpan.classList.remove('stream-placeholder');
                         }
                         if (browserStreamSpeaker) {
-                            browserStreamSpeaker.pushText(chunkText, clientRequestId);
+                            // Phase 4H uses end-only final TTS. Keep chunk synthesis dormant.
                         }
                         // Add a blinking cursor at the end (created once, on the first chunk)
                         if (!cursorEl) {
@@ -4223,7 +4551,6 @@ async function sendMessage(textOverride, options = {}) {
 
                     // DONE — The server signals that the response is complete
                     if (data.done) {
-                        if (browserStreamSpeaker) browserStreamSpeaker.finish();
                         streamDone = true;
                         break;
                     }
@@ -4237,12 +4564,16 @@ async function sendMessage(textOverride, options = {}) {
         }
 
         // Step 10: Clean up — remove the blinking cursor
-        if (browserStreamSpeaker) browserStreamSpeaker.finish();
+        // Phase 4H final TTS is end-only; do not flush chunked TTS.
 
         if (cursorEl) cursorEl.remove();
         // If the server sent nothing, show a placeholder
         const textSpan = contentEl.querySelector('.msg-stream-text');
         if (textSpan && !fullResponse) textSpan.textContent = '(No response)';
+        isStreaming = false;
+        if (voiceTurnManager?.isCurrent(clientRequestId)) {
+            await voiceAudioQueue?.playFinalText(fullResponse, clientRequestId);
+        }
 
     } catch (err) {
         clearTimeout(timeoutId);
@@ -4266,7 +4597,7 @@ async function sendMessage(textOverride, options = {}) {
         interruptingForBargeIn = false;
         if (orbContainer) orbContainer.classList.remove('active');
         if (!isJarvisSpeakingOrStreaming() && !isListening) setJarvisVisualState('idle');
-        maybeRestartListening();   // Auto-restart mic when stream ends (TTS may still be playing)
+        if (!isAssistantAudioActive()) maybeRestartListening();
     }
 }
 

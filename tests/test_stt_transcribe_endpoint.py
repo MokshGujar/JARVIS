@@ -212,6 +212,8 @@ class STTTranscribeEndpointTests(unittest.TestCase):
         self.assertIn("domain_correction_enabled", stt)
         self.assertEqual(stt["empty_transcript_behavior"], "short_prompt")
         self.assertEqual(stt["empty_transcript_prompt"], "I didn't catch that.")
+        self.assertFalse(stt["empty_transcript_play_tts"])
+        self.assertTrue(stt["empty_transcript_reset_mic"])
         semantic = response.json()["semantic"]
         self.assertIn("smart_enabled", semantic)
         self.assertIn("planner_enabled", semantic)
