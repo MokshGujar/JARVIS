@@ -560,7 +560,7 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
                 ).execute(ToolContext(command=command, payload={"automation_context": setup_context}))
 
                 self.assertFalse(result["success"])
-                self.assertIn(result["action"], {"semantic_action_blocked", "semantic_followup_required"})
+                self.assertIn(result["action"], {"semantic_confirmation_required", "semantic_followup_required"})
                 self.assertEqual(len(risky_tool.calls), 0)
 
     def test_semantic_claimed_unmappable_command_does_not_fall_through_to_legacy(self):

@@ -72,12 +72,27 @@ class SmartAutomationPlanner:
     RISKY_INTENTS = {
         SemanticAutomationIntent.DELETE_FILE,
         SemanticAutomationIntent.CLICK_TEXT,
+        SemanticAutomationIntent.CLICK_COORDINATES,
         SemanticAutomationIntent.SUBMIT_FORM,
+        SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+        SemanticAutomationIntent.LOGIN_SUBMIT,
         SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION,
         SemanticAutomationIntent.CALL_CONTACT,
         SemanticAutomationIntent.CLOSE_WINDOW,
+        SemanticAutomationIntent.RUN_TERMINAL_COMMAND,
+        SemanticAutomationIntent.APPLY_CODE_EDIT,
+        SemanticAutomationIntent.SHUTDOWN_SYSTEM,
+        SemanticAutomationIntent.RESTART_SYSTEM,
     }
-    CRITICAL_INTENTS = {SemanticAutomationIntent.DELETE_FILE}
+    CRITICAL_INTENTS = {
+        SemanticAutomationIntent.DELETE_FILE,
+        SemanticAutomationIntent.RUN_TERMINAL_COMMAND,
+        SemanticAutomationIntent.APPLY_CODE_EDIT,
+        SemanticAutomationIntent.SHUTDOWN_SYSTEM,
+        SemanticAutomationIntent.RESTART_SYSTEM,
+        SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+        SemanticAutomationIntent.LOGIN_SUBMIT,
+    }
     NON_MUTATING_INTENTS = {
         SemanticAutomationIntent.SEARCH_WEB,
         SemanticAutomationIntent.READ_ACTIVE_WINDOW,
@@ -449,6 +464,20 @@ class SmartAutomationPlanner:
         return []
 
     def _plan_communication_request(self, cleaned: str, original: str, context: AutomationContext | None) -> list[SemanticAutomationAction]:
+        send_direct = re.match(r"^(?:send (?:this|message)|send a message) to (?P<recipient>.+?)(?::| saying )\s*(?P<content>.+)$", cleaned)
+        if send_direct:
+            return [
+                self._action(
+                    SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION,
+                    AutomationDomain.COMMUNICATION,
+                    AutomationMode.CONFIRMED_EXECUTION,
+                    recipient=self._title_name(send_direct.group("recipient")),
+                    target=self._title_name(send_direct.group("recipient")),
+                    content=self._strip_filler(send_direct.group("content")),
+                    preferred_tool="message",
+                    safety_level="HIGH",
+                )
+            ]
         draft = re.match(r"^(?:draft a message to|tell) (?P<recipient>.+?) (?:saying )?(?P<content>.+)$", cleaned)
         if draft:
             return [
@@ -508,6 +537,18 @@ class SmartAutomationPlanner:
                     safety_level="HIGH",
                 )
             ]
+        coordinates = re.match(r"^click (?:coordinates?|at) (?P<x>-?\d+)[,\s]+(?P<y>-?\d+)$", cleaned)
+        if coordinates:
+            return [
+                self._action(
+                    SemanticAutomationIntent.CLICK_COORDINATES,
+                    AutomationDomain.VISIBLE_UI,
+                    AutomationMode.CONFIRMED_EXECUTION,
+                    target=f"{coordinates.group('x')},{coordinates.group('y')}",
+                    preferred_tool="app_interaction",
+                    safety_level="HIGH",
+                )
+            ]
         if cleaned == "submit the form":
             return [
                 self._action(
@@ -515,6 +556,28 @@ class SmartAutomationPlanner:
                     AutomationDomain.BROWSER,
                     AutomationMode.CONFIRMED_EXECUTION,
                     target="form",
+                    preferred_tool="browser",
+                    safety_level="CRITICAL",
+                )
+            ]
+        if re.search(r"\b(?:submit|confirm|complete)\b.*\b(?:purchase|payment|checkout|order)\b", cleaned):
+            return [
+                self._action(
+                    SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+                    AutomationDomain.BROWSER,
+                    AutomationMode.CONFIRMED_EXECUTION,
+                    target="payment",
+                    preferred_tool="browser",
+                    safety_level="CRITICAL",
+                )
+            ]
+        if re.search(r"\b(?:submit|confirm|complete)\b.*\blogin\b|\blogin submit\b", cleaned):
+            return [
+                self._action(
+                    SemanticAutomationIntent.LOGIN_SUBMIT,
+                    AutomationDomain.BROWSER,
+                    AutomationMode.CONFIRMED_EXECUTION,
+                    target="login",
                     preferred_tool="browser",
                     safety_level="CRITICAL",
                 )
@@ -533,6 +596,15 @@ class SmartAutomationPlanner:
             return [self._action(SemanticAutomationIntent.TAKE_SCREENSHOT, AutomationDomain.SCREENSHOT_VISION, AutomationMode.OBSERVATION, preferred_tool="screenshot")]
         if cleaned == "check battery":
             return [self._action(SemanticAutomationIntent.SYSTEM_STATUS, AutomationDomain.SYSTEM, AutomationMode.DIRECT_TOOL, target="battery", preferred_tool="system")]
+        if re.match(r"^(?:shutdown|shut down|power off)(?:\s+(?:the\s+)?(?:computer|laptop|pc))?$", cleaned):
+            return [self._action(SemanticAutomationIntent.SHUTDOWN_SYSTEM, AutomationDomain.SYSTEM, AutomationMode.CONFIRMED_EXECUTION, target="system", preferred_tool="system", safety_level="CRITICAL")]
+        if re.match(r"^(?:restart|reboot)(?:\s+(?:the\s+)?(?:computer|laptop|pc))?$", cleaned):
+            return [self._action(SemanticAutomationIntent.RESTART_SYSTEM, AutomationDomain.SYSTEM, AutomationMode.CONFIRMED_EXECUTION, target="system", preferred_tool="system", safety_level="CRITICAL")]
+        terminal = re.match(r"^(?:run|execute)(?:\s+(?:terminal|shell|command))?\s+(?P<command>.+)$", cleaned)
+        if terminal and re.search(r"\b(?:terminal|shell|command|powershell|cmd|python|npm|git)\b", cleaned):
+            return [self._action(SemanticAutomationIntent.RUN_TERMINAL_COMMAND, AutomationDomain.DEVELOPER, AutomationMode.CONFIRMED_EXECUTION, target=terminal.group("command"), content=terminal.group("command"), preferred_tool="terminal", safety_level="CRITICAL")]
+        if re.match(r"^(?:apply|make)\s+(?:the\s+)?code edit\b", cleaned):
+            return [self._action(SemanticAutomationIntent.APPLY_CODE_EDIT, AutomationDomain.DEVELOPER, AutomationMode.CONFIRMED_EXECUTION, target="code edit", preferred_tool="code_edit", safety_level="CRITICAL")]
         return []
 
     def _plan_dry_run_request(self, cleaned: str, original: str, context: AutomationContext | None) -> list[SemanticAutomationAction]:
@@ -582,7 +654,14 @@ class SmartAutomationPlanner:
             SemanticAutomationIntent.TAKE_SCREENSHOT: [("screenshot", "screenshot", "capture")],
             SemanticAutomationIntent.SYSTEM_STATUS: [("system", "system", "safe_system_info")],
             SemanticAutomationIntent.CLICK_TEXT: [("app_interaction", "click_text", "click_text")],
+            SemanticAutomationIntent.CLICK_COORDINATES: [("app_interaction", "click_coordinates", "click_coordinates")],
             SemanticAutomationIntent.SUBMIT_FORM: [("browser", "browser_form_input", "form_submit")],
+            SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT: [("browser", "browser_form_input", "form_submit")],
+            SemanticAutomationIntent.LOGIN_SUBMIT: [("browser", "browser_form_input", "form_submit")],
+            SemanticAutomationIntent.RUN_TERMINAL_COMMAND: [("terminal", "terminal", "run_command")],
+            SemanticAutomationIntent.APPLY_CODE_EDIT: [("code_edit", "code_edit", "apply_patch")],
+            SemanticAutomationIntent.SHUTDOWN_SYSTEM: [("system", "system", "shutdown_system")],
+            SemanticAutomationIntent.RESTART_SYSTEM: [("system", "system", "restart_system")],
         }
         return [{"tool_name": tool, "intent": intent, "action": step_action, "args": args} for tool, intent, step_action in mapping.get(action.intent, [])]
 

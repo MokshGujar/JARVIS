@@ -134,6 +134,24 @@ class AutomationResponseFormatter:
     def _format_single(self, result: dict[str, Any]) -> str | None:
         action = str(result.get("action") or "").strip().lower()
         message = str(result.get("message") or "").strip()
+        if action in {
+            "semantic_confirmation_required",
+            "semantic_confirmation_updated",
+            "semantic_confirmation_cancelled",
+            "semantic_confirmation_expired",
+            "semantic_confirmation_accepted_disabled",
+            "semantic_confirmation_none",
+            "semantic_confirmation_update_needed",
+            "duplicate_semantic_action",
+            "duplicate_confirmation_cancelled",
+        }:
+            return self._trim(self._sanitize_message(message or self._semantic_fallback(action)))
+        if action in {"semantic_action_blocked", "unsupported_semantic_action"}:
+            return self._trim(self._sanitize_message(message or "I can't safely run that yet."))
+        if action in {"tool_not_found"}:
+            return "That tool is not available right now."
+        if action in {"dependency_failed"}:
+            return "I started that, but a required step did not finish."
         if action in {"confirmation_required", "auth_required"}:
             if action == "auth_required":
                 return "I need voice permission before I can do that."
@@ -163,6 +181,8 @@ class AutomationResponseFormatter:
             return self._trim(message or "Done.")
         if action in {"search"} and "what should i search" in message.lower():
             return "What should I search for?"
+        if message and self._looks_internal(message):
+            return "I couldn't complete that action."
         return None
 
     @staticmethod
@@ -211,6 +231,38 @@ class AutomationResponseFormatter:
     def _trim(self, message: str) -> str:
         text = re.sub(r"\s+", " ", str(message or "")).strip()
         return text if len(text) <= self.MAX_SPOKEN_CHARS else f"{text[: self.MAX_SPOKEN_CHARS - 3].rstrip()}..."
+
+    @staticmethod
+    def _semantic_fallback(action: str) -> str:
+        return {
+            "semantic_confirmation_required": "I need confirmation before doing that.",
+            "semantic_confirmation_updated": "Updated. Should I continue?",
+            "semantic_confirmation_cancelled": "Cancelled. I did not run it.",
+            "semantic_confirmation_expired": "That confirmation expired. I did not run it.",
+            "semantic_confirmation_accepted_disabled": "I have confirmation, but this action is not enabled yet.",
+            "semantic_confirmation_none": "Nothing is waiting for confirmation.",
+            "duplicate_semantic_action": "This looks like the same action again. Should I repeat it?",
+            "duplicate_confirmation_cancelled": "Cancelled. I did not repeat it.",
+        }.get(action, "I can't safely run that yet.")
+
+    @staticmethod
+    def _looks_internal(message: str) -> bool:
+        return bool(
+            "ToolResult(" in message
+            or "Traceback" in message
+            or re.search(r"\b[A-Z][A-Z0-9]+_[A-Z0-9_]+\b", message)
+            or re.search(r"confirmation_id\s*=", message)
+            or re.search(r"^\s*[\{\[]", message)
+        )
+
+    def _sanitize_message(self, message: str) -> str:
+        text = str(message or "")
+        if self._looks_internal(text):
+            return "I couldn't complete that action."
+        text = re.sub(r"\bconfirmation_id\s*=\s*[\w:-]+", "", text)
+        text = re.sub(r"\bconfirm-[a-f0-9]{8,}\b", "", text)
+        text = re.sub(r"\b[A-Z][A-Z0-9]+_[A-Z0-9_]+\b", "that action", text)
+        return re.sub(r"\s+", " ", text).strip()
 
 
 AUTOMATION_RESPONSE_FORMATTER = AutomationResponseFormatter()

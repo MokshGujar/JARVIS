@@ -39,6 +39,14 @@ class MainOrchestrator:
 
     def execute(self, context: ToolContext) -> dict[str, Any] | None:
         automation_context = self._automation_context(context)
+        confirmation_response = self.semantic_adapter.try_confirmation_response(
+            context.command,
+            context=automation_context,
+            execute_confirmed_plan=lambda plan: self._execute_confirmed_plan(plan, context),
+        )
+        if confirmation_response is not None:
+            return confirmation_response
+
         dry_run_response = self.semantic_adapter.try_dry_run_response(
             context.command,
             context=automation_context,
@@ -117,6 +125,28 @@ class MainOrchestrator:
 
     def execute_text(self, user_text: str, **context_kwargs: Any) -> dict[str, Any] | None:
         return self.execute(ToolContext(command=user_text, **context_kwargs))
+
+    def _execute_confirmed_plan(self, plan: Any, context: ToolContext) -> dict[str, Any]:
+        executor = self.tool_executor or ToolExecutor(
+            registry=self.registry,
+            scenario_policy=self.scenario_policy,
+            enforce_policy=self.enforce_policy,
+        )
+        confirmed_context = ToolContext(
+            command=context.command,
+            intent=context.intent,
+            session_id=context.session_id,
+            face_session_id=context.face_session_id,
+            step_up_token=context.step_up_token,
+            payload=dict(context.payload),
+            source=context.source,
+            user_id=context.user_id,
+            security_state=dict(context.security_state),
+            confirmation_state={**dict(context.confirmation_state), "confirmed": True},
+            request_id=context.request_id,
+            metadata=dict(context.metadata),
+        )
+        return executor.execute(plan, confirmed_context)
 
     @staticmethod
     def _automation_context(context: ToolContext) -> Any | None:

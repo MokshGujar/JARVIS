@@ -16,8 +16,10 @@ from config import (
     SEMANTIC_SAFE_EXECUTION_ENABLED,
     SMART_AUTOMATION_ENABLED,
 )
-from app.orchestrator.action_plan import ActionPlan
+from app.orchestrator.action_plan import ActionPlan, ActionStep
+from app.orchestrator.automation_context import NO_CONFIRMATIONS, YES_CONFIRMATIONS
 from app.orchestrator.semantic_action_mapper import MUTATING_INTENTS, SemanticActionMapper
+from app.orchestrator.semantic_automation import SemanticAutomationIntent
 
 if TYPE_CHECKING:
     from app.orchestrator.automation_context import AutomationContext
@@ -25,6 +27,24 @@ if TYPE_CHECKING:
     from app.orchestrator.semantic_automation import SemanticAutomationAction
 
 logger = logging.getLogger(__name__)
+
+STAGED_CONFIRMATION_INTENTS = {
+    SemanticAutomationIntent.DELETE_FILE,
+    SemanticAutomationIntent.DRAFT_MESSAGE,
+    SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION,
+    SemanticAutomationIntent.CALL_CONTACT,
+    SemanticAutomationIntent.CLICK_TEXT,
+    SemanticAutomationIntent.CLICK_COORDINATES,
+    SemanticAutomationIntent.SUBMIT_FORM,
+    SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+    SemanticAutomationIntent.LOGIN_SUBMIT,
+    SemanticAutomationIntent.CLOSE_WINDOW,
+    SemanticAutomationIntent.RUN_TERMINAL_COMMAND,
+    SemanticAutomationIntent.APPLY_CODE_EDIT,
+    SemanticAutomationIntent.SHUTDOWN_SYSTEM,
+    SemanticAutomationIntent.RESTART_SYSTEM,
+}
+GENERIC_CONFIRMATION_REPLIES = {"yes", "y", "yes do it", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "cancel that", "stop", "never mind"}
 
 @dataclass(slots=True)
 class DryRunRequest:
@@ -72,6 +92,52 @@ class SemanticPlannerAdapter:
     def try_plan_action(self, text: str, context: AutomationContext | None = None) -> ActionPlan | None:
         return None
 
+    def try_confirmation_response(
+        self,
+        text: str,
+        *,
+        context: AutomationContext | None = None,
+        execute_confirmed_plan: Callable[[ActionPlan], dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        if context is None:
+            return None
+        reply = _confirmation_reply(text)
+        pending = context.last_confirmation_request
+
+        if pending is not None and pending.status == "pending":
+            old_recipient = pending.recipient
+            old_content = pending.content
+            if context.update_pending_confirmation_from_text(text):
+                updated = "message" if pending.content != old_content else "recipient" if pending.recipient != old_recipient else ""
+                return _confirmation_updated_response(context.last_confirmation_request, updated=updated)
+            if _is_ambiguous_target_change(reply, pending.action):
+                context.clear_pending_action()
+                question = "Which file should I delete?" if "delete" in pending.action else "Which target should I use?"
+                return _response("semantic_confirmation_update_needed", question, requires_followup=True)
+            resolution = context.resolve_confirmation_response(text)
+            if resolution.status == "unknown":
+                return None
+            if resolution.status == "expired":
+                return _response("semantic_confirmation_expired", "That confirmation expired. I did not run it.")
+            if resolution.status == "cancelled":
+                return _cancelled_response(resolution.confirmation)
+            if resolution.status == "confirmed" and resolution.confirmation is not None:
+                confirmation = resolution.confirmation
+                if confirmation.action == "duplicate_repeat":
+                    plan = _action_plan_from_dict(confirmation.tool_plan.get("plan"))
+                    if plan is None or not _plan_is_safe_repeat(plan) or execute_confirmed_plan is None:
+                        return _accepted_disabled_response(confirmation)
+                    result = dict(execute_confirmed_plan(plan) or {})
+                    result["duplicate_confirmation_accepted"] = True
+                    result.setdefault("semantic_execution", True)
+                    return result
+                return _accepted_disabled_response(confirmation)
+            return None
+
+        if reply in GENERIC_CONFIRMATION_REPLIES:
+            return _response("semantic_confirmation_none", "Nothing is waiting for confirmation.")
+        return None
+
     def peek_live_claim(self, text: str, context: AutomationContext | None = None) -> Any | None:
         if is_explicit_dry_run_request(text) or not self.enabled or not self.safe_execution_enabled:
             return None
@@ -96,6 +162,11 @@ class SemanticPlannerAdapter:
         if missing_fields:
             logger.info("[SEMANTIC] blocked reason=missing_context")
             return self._missing_fields_response(result)
+
+        confirmation_response = self._stage_confirmation_response(actions, result, context)
+        if confirmation_response is not None:
+            logger.info("[SEMANTIC] blocked reason=confirmation_required")
+            return confirmation_response
 
         duplicate_response, fingerprints = self._duplicate_response(actions, result, context)
         if duplicate_response is not None:
@@ -176,7 +247,31 @@ class SemanticPlannerAdapter:
                 mutating=mutating,
             )
             if context.is_duplicate(fingerprint):
+                mapper = SemanticActionMapper()
+                mapped = mapper.map_actions(
+                    original_text=getattr(result, "original_text", ""),
+                    corrected_text=getattr(result, "corrected_text", ""),
+                    actions=actions,
+                    context=context,
+                    fingerprints=[fingerprint],
+                )
+                if mapped.plan is None:
+                    return mapped.response, []
                 message = "This looks like the same action again. Should I repeat it?"
+                context.set_pending_confirmation(
+                    semantic_action=action.intent.value,
+                    action="duplicate_repeat",
+                    target=action.target or action.file_path or action.recipient or action.app,
+                    content=action.content,
+                    recipient=action.recipient,
+                    tool_plan={
+                        "kind": "duplicate_repeat",
+                        "plan": mapped.plan.as_dict(),
+                        "fingerprint": fingerprint.as_dict(),
+                    },
+                    safety_level=str(action.safety_level or "LOW").upper(),
+                    requires_voice_permission=False,
+                )
                 return {
                     "success": False,
                     "action": "duplicate_semantic_action",
@@ -190,6 +285,59 @@ class SemanticPlannerAdapter:
                 }, []
             fingerprints.append(fingerprint)
         return None, fingerprints
+
+    def _stage_confirmation_response(self, actions: list[SemanticAutomationAction], result: Any, context: AutomationContext | None) -> dict[str, Any] | None:
+        if context is None:
+            return None
+        risky = [
+            action
+            for action in actions
+            if action.intent in STAGED_CONFIRMATION_INTENTS or str(action.safety_level or "").upper() in {"HIGH", "CRITICAL"}
+        ]
+        if not risky:
+            return None
+        action = risky[0]
+        action_plan = getattr(result, "action_plan", None)
+        requires_voice = bool(
+            getattr(action_plan, "requires_voice_permission", False)
+            or any(getattr(step, "requires_voice_permission", False) for step in getattr(action_plan, "steps", []) or [])
+        )
+        if action.intent == SemanticAutomationIntent.DRAFT_MESSAGE:
+            semantic_action = SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION.value
+            pending_action = "send_message"
+            context.current_message_draft = {"recipient": action.recipient, "content": context.redact_sensitive_text(action.content)}
+        else:
+            semantic_action = action.intent.value
+            pending_action = _pending_action_name(action)
+        confirmation = context.set_pending_confirmation(
+            semantic_action=semantic_action,
+            action=pending_action,
+            target=action.target or action.file_path or action.recipient or action.app,
+            content=action.content,
+            recipient=action.recipient,
+            tool_plan={
+                "kind": "risky_disabled",
+                "result": result.as_dict() if hasattr(result, "as_dict") else {},
+                "plan": action_plan.as_dict() if action_plan is not None else None,
+                "semantic_actions": [item.as_dict() for item in actions],
+            },
+            safety_level=str(action.safety_level or "HIGH").upper(),
+            requires_voice_permission=requires_voice,
+        )
+        message = _confirmation_prompt(action)
+        return {
+            "success": False,
+            "action": "semantic_confirmation_required",
+            "message": message,
+            "display_text": message,
+            "spoken_text": message,
+            "requires_confirmation": True,
+            "requires_followup": True,
+            "semantic_execution": True,
+            "executable": False,
+            "safety_level": confirmation.safety_level,
+            "requires_voice_permission": requires_voice,
+        }
 
     def _unavailable_response(self, request: DryRunRequest) -> dict[str, Any]:
         message = "Semantic dry-run planning is unavailable right now. No actions were run."
@@ -433,3 +581,201 @@ def _fallback_step_label(action: str, args: dict[str, Any]) -> str:
         "write_file": f"Write {args.get('content') or 'the content'} into it.",
     }
     return labels.get(str(action or ""), f"Prepare the {str(action or 'automation')} step.")
+
+
+def _confirmation_reply(text: str) -> str:
+    reply = re.sub(r"\s+", " ", str(text or "").strip().lower()).strip(" .!?")
+    reply = reply.replace("’", "'")
+    if reply.startswith("jarvis "):
+        reply = reply[7:].strip()
+    return reply
+
+
+def _is_ambiguous_target_change(reply: str, action: str) -> bool:
+    return bool(re.match(r"^no,?\s+(?:delete|send|close|run)\s+(?:the\s+)?other\s+(?:one|file|message|window|command)?$", reply)) or (
+        "other one" in reply and any(word in action for word in ("delete", "send", "close", "run"))
+    )
+
+
+def _response(action: str, message: str, *, requires_followup: bool = False, **extra: Any) -> dict[str, Any]:
+    payload = {
+        "success": False,
+        "action": action,
+        "message": message,
+        "display_text": message,
+        "spoken_text": message,
+        "semantic_execution": True,
+        "executable": False,
+    }
+    if requires_followup:
+        payload["requires_followup"] = True
+    payload.update(extra)
+    return payload
+
+
+def _confirmation_updated_response(confirmation: Any | None, *, updated: str = "") -> dict[str, Any]:
+    if confirmation is None:
+        return _response("semantic_confirmation_updated", "Updated. Should I continue?", requires_followup=True)
+    if confirmation.action == "send_message":
+        if updated == "message":
+            message = "I changed the message. Should I send it?"
+        elif confirmation.recipient:
+            message = f"I changed the recipient to {confirmation.recipient}. Should I send it?"
+        else:
+            message = "I changed the message. Should I send it?"
+        return _response("semantic_confirmation_updated", message, requires_followup=True)
+    label = _target_label(confirmation.target)
+    return _response("semantic_confirmation_updated", f"I updated that to {label}. Should I continue?", requires_followup=True)
+
+
+def _cancelled_response(confirmation: Any | None) -> dict[str, Any]:
+    action = str(getattr(confirmation, "action", "") or "")
+    if "send" in action:
+        return _response("semantic_confirmation_cancelled", "Cancelled. I did not send it.")
+    if "delete" in action:
+        return _response("semantic_confirmation_cancelled", "Cancelled. I did not delete it.")
+    if "duplicate" in action:
+        return _response("duplicate_confirmation_cancelled", "Cancelled. I did not repeat it.")
+    return _response("semantic_confirmation_cancelled", "Cancelled. I did not run it.")
+
+
+def _accepted_disabled_response(confirmation: Any) -> dict[str, Any]:
+    action = str(getattr(confirmation, "action", "") or "")
+    semantic_action = str(getattr(confirmation, "semantic_action", "") or "")
+    if "send" in action or "SEND_MESSAGE" in semantic_action:
+        message = "I have confirmation, but actual sending is not enabled yet."
+    elif "delete" in action or "DELETE_FILE" in semantic_action:
+        message = "I have confirmation, but deleting files is not enabled in this phase."
+    elif "call" in action or "CALL" in semantic_action:
+        message = "I have confirmation, but actual calling is not enabled yet."
+    elif "terminal" in action or "RUN_TERMINAL" in semantic_action:
+        message = "I can prepare this, but I can't run terminal commands yet."
+    elif "code" in action or "CODE_EDIT" in semantic_action:
+        message = "I have confirmation, but applying code edits is not enabled in this phase."
+    elif "submit" in action or "SUBMIT" in semantic_action or "PAYMENT" in semantic_action or "LOGIN" in semantic_action:
+        message = "I have confirmation, but submitting forms is not enabled in this phase."
+    elif "click" in action or "CLICK" in semantic_action:
+        message = "I have confirmation, but clicking there is not enabled in this phase."
+    elif "shutdown" in action or "restart" in action or "SHUTDOWN" in semantic_action or "RESTART" in semantic_action:
+        message = "I have confirmation, but power actions are not enabled in this phase."
+    else:
+        message = "I have confirmation, but this action is not enabled yet."
+    return _response("semantic_confirmation_accepted_disabled", message)
+
+
+def _pending_action_name(action: Any) -> str:
+    intent = getattr(action, "intent", None)
+    if intent == SemanticAutomationIntent.DELETE_FILE:
+        return "delete_file"
+    if intent == SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION:
+        return "send_message"
+    if intent == SemanticAutomationIntent.CALL_CONTACT:
+        return "call_contact"
+    if intent == SemanticAutomationIntent.CLOSE_WINDOW:
+        return "close_window"
+    if intent in {SemanticAutomationIntent.SUBMIT_FORM, SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT, SemanticAutomationIntent.LOGIN_SUBMIT}:
+        return "submit_form"
+    if intent in {SemanticAutomationIntent.CLICK_TEXT, SemanticAutomationIntent.CLICK_COORDINATES}:
+        return "click"
+    if intent == SemanticAutomationIntent.RUN_TERMINAL_COMMAND:
+        return "terminal_run"
+    if intent == SemanticAutomationIntent.APPLY_CODE_EDIT:
+        return "code_edit_apply"
+    if intent == SemanticAutomationIntent.SHUTDOWN_SYSTEM:
+        return "shutdown_system"
+    if intent == SemanticAutomationIntent.RESTART_SYSTEM:
+        return "restart_system"
+    return str(getattr(intent, "value", intent) or "semantic_action").lower()
+
+
+def _confirmation_prompt(action: Any) -> str:
+    intent = getattr(action, "intent", None)
+    target = _target_label(getattr(action, "file_path", None) or getattr(action, "target", None) or getattr(action, "recipient", None))
+    if intent == SemanticAutomationIntent.DELETE_FILE:
+        return f"I need confirmation before deleting {target}. Should I delete it?"
+    if intent in {SemanticAutomationIntent.DRAFT_MESSAGE, SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION}:
+        recipient = _target_label(getattr(action, "recipient", None) or "the recipient")
+        return f"I drafted the message to {recipient}. Should I send it?"
+    if intent == SemanticAutomationIntent.CALL_CONTACT:
+        return f"I need confirmation before calling {target}."
+    if intent == SemanticAutomationIntent.CLOSE_WINDOW:
+        return "I need confirmation before closing this window."
+    if intent == SemanticAutomationIntent.RUN_TERMINAL_COMMAND:
+        return "I need confirmation before running that command."
+    if intent == SemanticAutomationIntent.APPLY_CODE_EDIT:
+        return "I need confirmation before applying that code edit."
+    if intent in {SemanticAutomationIntent.SUBMIT_FORM, SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT, SemanticAutomationIntent.LOGIN_SUBMIT}:
+        return "I need confirmation before submitting that."
+    if intent in {SemanticAutomationIntent.CLICK_TEXT, SemanticAutomationIntent.CLICK_COORDINATES}:
+        return "I need confirmation before clicking that."
+    if intent in {SemanticAutomationIntent.SHUTDOWN_SYSTEM, SemanticAutomationIntent.RESTART_SYSTEM}:
+        return "I need confirmation before changing power state."
+    return "I need confirmation before doing that."
+
+
+def _target_label(value: Any) -> str:
+    if value is None:
+        return "that"
+    text = str(value).strip()
+    if not text:
+        return "that"
+    if "\\" in text or "/" in text:
+        return _file_label(text)
+    return text
+
+
+def _action_plan_from_dict(value: Any) -> ActionPlan | None:
+    if not isinstance(value, dict):
+        return None
+    steps: list[ActionStep] = []
+    for item in value.get("steps") or []:
+        if not isinstance(item, dict):
+            continue
+        steps.append(
+            ActionStep(
+                step_id=str(item.get("step_id") or f"step{len(steps) + 1}"),
+                tool_name=str(item.get("tool_name") or ""),
+                intent=str(item.get("intent") or ""),
+                action=str(item.get("action") or ""),
+                args=dict(item.get("args") or {}),
+                depends_on=list(item.get("depends_on") or []),
+                safety_level=str(item.get("safety_level") or "LOW"),
+                requires_confirmation=bool(item.get("requires_confirmation")),
+                requires_face_step_up=bool(item.get("requires_face_step_up")),
+                requires_voice_permission=bool(item.get("requires_voice_permission")),
+                status=str(item.get("status") or "pending"),
+            )
+        )
+    if not steps:
+        return None
+    return ActionPlan(
+        original_text=str(value.get("original_text") or "confirmed duplicate"),
+        steps=steps,
+        is_multistep=bool(value.get("is_multistep", True)),
+        requires_confirmation=bool(value.get("requires_confirmation")),
+        requires_face_step_up=bool(value.get("requires_face_step_up")),
+        requires_voice_permission=bool(value.get("requires_voice_permission")),
+        metadata=dict(value.get("metadata") or {}),
+    )
+
+
+def _plan_is_safe_repeat(plan: ActionPlan) -> bool:
+    blocked_actions = {
+        "delete_file",
+        "send_message",
+        "call_contact",
+        "form_submit",
+        "run_command",
+        "apply_patch",
+        "click_coordinates",
+        "shutdown_system",
+        "restart_system",
+    }
+    for step in plan.steps:
+        if str(step.safety_level or "LOW").upper() not in {"LOW", "MEDIUM"}:
+            return False
+        if step.requires_confirmation or step.requires_face_step_up or step.requires_voice_permission:
+            return False
+        if step.action in blocked_actions:
+            return False
+    return True

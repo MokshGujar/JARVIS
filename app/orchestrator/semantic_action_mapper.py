@@ -16,8 +16,15 @@ BLOCKED_INTENTS = {
     SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION,
     SemanticAutomationIntent.CALL_CONTACT,
     SemanticAutomationIntent.CLICK_TEXT,
+    SemanticAutomationIntent.CLICK_COORDINATES,
     SemanticAutomationIntent.SUBMIT_FORM,
+    SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+    SemanticAutomationIntent.LOGIN_SUBMIT,
     SemanticAutomationIntent.CLOSE_WINDOW,
+    SemanticAutomationIntent.RUN_TERMINAL_COMMAND,
+    SemanticAutomationIntent.APPLY_CODE_EDIT,
+    SemanticAutomationIntent.SHUTDOWN_SYSTEM,
+    SemanticAutomationIntent.RESTART_SYSTEM,
 }
 
 MUTATING_INTENTS = {

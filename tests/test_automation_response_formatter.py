@@ -70,6 +70,45 @@ class AutomationResponseFormatterTests(unittest.TestCase):
         self.assertEqual(confirmation["message"], "Please confirm before I continue.")
         self.assertEqual(auth["message"], "I need voice permission before I can do that.")
 
+    def test_semantic_confirmation_responses_are_natural(self):
+        required = normalize_automation_response(
+            {
+                "success": False,
+                "action": "semantic_confirmation_required",
+                "message": "I need confirmation before deleting meeting note.txt. Should I delete it?",
+                "confirmation_id": "confirm-secret",
+            }
+        )
+        blocked = normalize_automation_response(
+            {
+                "success": False,
+                "action": "semantic_confirmation_accepted_disabled",
+                "message": "I have confirmation, but deleting files is not enabled in this phase.",
+            }
+        )
+        cancelled = normalize_automation_response(
+            {"success": False, "action": "semantic_confirmation_cancelled", "message": "Cancelled. I did not send it."}
+        )
+
+        self.assertEqual(required["message"], "I need confirmation before deleting meeting note.txt. Should I delete it?")
+        self.assertEqual(blocked["message"], "I have confirmation, but deleting files is not enabled in this phase.")
+        self.assertEqual(cancelled["message"], "Cancelled. I did not send it.")
+        self.assertNotIn("confirm-secret", required["message"])
+
+    def test_response_formatter_hides_internal_repr_and_enums(self):
+        raw = normalize_automation_response({"success": False, "action": "semantic_action_blocked", "message": "SEND_MESSAGE_AFTER_CONFIRMATION"})
+        tool_result = normalize_automation_response({"success": False, "action": "write_file", "message": "ToolResult(success=False)"})
+
+        self.assertNotIn("SEND_MESSAGE_AFTER_CONFIRMATION", raw["message"])
+        self.assertNotIn("ToolResult", tool_result["message"])
+
+    def test_tool_unavailable_and_dependency_failure_are_natural(self):
+        missing = normalize_automation_response({"success": False, "action": "tool_not_found", "message": "No tool is registered for planned step step1: terminal."})
+        dependency = normalize_automation_response({"success": False, "action": "dependency_failed", "message": "Step step3 could not run because step2 failed."})
+
+        self.assertEqual(missing["message"], "That tool is not available right now.")
+        self.assertEqual(dependency["message"], "I started that, but a required step did not finish.")
+
 
 if __name__ == "__main__":
     unittest.main()

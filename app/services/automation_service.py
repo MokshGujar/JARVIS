@@ -513,6 +513,8 @@ class AutomationService:
 
     def looks_like_semantic_request(self, command: str, *, session_id: str | None = None) -> bool:
         context = self._automation_context_for(session_id)
+        if self._looks_like_semantic_confirmation_turn(command, context=context):
+            return True
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
         adapter = probe_orchestrator.semantic_adapter
         if not adapter.enabled or not adapter.safe_execution_enabled:
@@ -531,6 +533,43 @@ class AutomationService:
         else:
             logger.info("[SEMANTIC] claimed=true intent=%s context=%s", intent, context_label)
         return True
+
+    @staticmethod
+    def _looks_like_semantic_confirmation_turn(command: str, *, context: AutomationContext | None) -> bool:
+        pending = context.last_confirmation_request if context is not None else None
+        lowered = re.sub(r"\s+", " ", str(command or "").strip().lower()).strip(" .!?")
+        if pending is not None and pending.status == "pending":
+            return bool(
+                lowered in {
+                    "yes",
+                    "y",
+                    "yes do it",
+                    "do it",
+                    "confirm",
+                    "send it",
+                    "now send it",
+                    "delete it",
+                    "close it",
+                    "run it",
+                    "go ahead",
+                    "proceed",
+                    "no",
+                    "n",
+                    "cancel",
+                    "cancel that",
+                    "stop",
+                    "never mind",
+                    "don't",
+                    "dont",
+                    "don't send",
+                    "dont send",
+                    "don't delete",
+                    "dont delete",
+                }
+                or lowered.startswith("change ")
+                or "other one" in lowered
+            )
+        return lowered in {"yes", "y", "yes do it", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "cancel that"}
 
     def execute(self, command: str, *, session_id: str | None = None) -> Dict[str, object]:
         if session_id:

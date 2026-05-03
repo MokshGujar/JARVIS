@@ -23,8 +23,35 @@ SENSITIVE_PATTERNS = (
     re.compile(r"\b\d{4,8}\b(?=.*\b(?:otp|code|verification)\b)", re.I),
 )
 
-YES_CONFIRMATIONS = {"yes", "y", "do it", "confirm", "send it", "delete it", "go ahead", "proceed"}
-NO_CONFIRMATIONS = {"no", "n", "cancel", "don't", "dont", "do not", "never mind", "stop"}
+YES_CONFIRMATIONS = {
+    "yes",
+    "y",
+    "yes do it",
+    "do it",
+    "confirm",
+    "send it",
+    "now send it",
+    "delete it",
+    "close it",
+    "run it",
+    "go ahead",
+    "proceed",
+}
+NO_CONFIRMATIONS = {
+    "no",
+    "n",
+    "cancel",
+    "don't",
+    "dont",
+    "do not",
+    "never mind",
+    "stop",
+    "don't send",
+    "dont send",
+    "don't delete",
+    "dont delete",
+    "cancel that",
+}
 NON_MUTATING_INTENTS = {
     "READ_ACTIVE_WINDOW",
     "SEARCH_WEB",
@@ -307,7 +334,7 @@ class AutomationContext:
         return confirmation
 
     def resolve_confirmation_response(self, text: str, *, expected_action: str | None = None) -> ConfirmationResolution:
-        reply = re.sub(r"\s+", " ", str(text or "").strip().lower())
+        reply = _normalize_confirmation_reply(text)
         confirmation = self.last_confirmation_request
         if confirmation is None or confirmation.status != "pending":
             return ConfirmationResolution(status="none", message="No pending confirmation.")
@@ -323,6 +350,7 @@ class AutomationContext:
             return ConfirmationResolution(status="cancelled", confirmation=confirmation, message="Cancelled.")
         if reply in YES_CONFIRMATIONS:
             confirmation.status = "confirmed"
+            self.clear_pending_action()
             return ConfirmationResolution(status="confirmed", confirmation=confirmation, message="Confirmed.")
         return ConfirmationResolution(status="unknown", confirmation=confirmation, message="That was not a confirmation response.")
 
@@ -338,11 +366,17 @@ class AutomationContext:
             if confirmation.recipient and confirmation.recipient.lower() == old.lower():
                 confirmation.recipient = new
                 confirmation.target = new if confirmation.target == old else confirmation.target
+                confirmation.expires_at = time.time() + AUTOMATION_CONTEXT_TTL_SECONDS
+                if self.current_message_draft:
+                    self.current_message_draft = {**self.current_message_draft, "recipient": new}
                 self.current_pending_action = confirmation.as_dict()
                 return True
         content_match = re.match(r"^change\s+(?:the\s+)?message\s+to\s+(.+?)[.!?]*$", raw, flags=re.I)
         if content_match:
             confirmation.content = self.redact_sensitive_text(content_match.group(1).strip())
+            confirmation.expires_at = time.time() + AUTOMATION_CONTEXT_TTL_SECONDS
+            if self.current_message_draft:
+                self.current_message_draft = {**self.current_message_draft, "content": confirmation.content}
             self.current_pending_action = confirmation.as_dict()
             return True
         return False
@@ -447,3 +481,11 @@ def _stable_hash(value: Any) -> str:
     else:
         raw = json.dumps(value, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _normalize_confirmation_reply(text: str) -> str:
+    reply = re.sub(r"\s+", " ", str(text or "").strip().lower()).strip(" .!?")
+    reply = reply.replace("’", "'")
+    if reply.startswith("jarvis "):
+        reply = reply[7:].strip()
+    return reply
