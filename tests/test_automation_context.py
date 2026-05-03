@@ -73,6 +73,16 @@ class AutomationContextTests(unittest.TestCase):
         self.assertIsNot(first, second)
         self.assertEqual(second.session_id, "s1")
 
+    def test_context_store_reuses_stable_session_id_across_requests(self):
+        store = AutomationContextStore()
+        first = store.get("stable-session")
+        first.last_created_file_path = "desktop/semantic test.txt"
+
+        second = store.get("stable-session")
+
+        self.assertIs(first, second)
+        self.assertEqual(second.last_created_file_path, "desktop/semantic test.txt")
+
     def test_sensitive_content_is_redacted_and_sensitive_fields_clear(self):
         context = AutomationContext(session_id="s1")
         context.last_typed_text = "api key sk-abcdefghijklmnopqrstuvwxyz"

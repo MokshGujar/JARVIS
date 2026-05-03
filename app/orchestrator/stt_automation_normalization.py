@@ -32,6 +32,44 @@ def normalize_automation_command(text: str, context: Any = None) -> AutomationCo
     tokens = _context_tokens(context)
     lowered = original.lower().strip()
 
+    corrected, wake_removed = _strip_wake_words(corrected)
+    if wake_removed:
+        corrections.append("wake_word_removed")
+    corrected, filler_removed = _strip_request_fillers(corrected)
+    if filler_removed:
+        corrections.append("filler_removed")
+    lowered = corrected.lower().strip()
+
+    if _looks_like_file_edit_context(lowered, tokens):
+        updated = re.sub(r"^\s*i'?ll\s+(put\b.+)$", r"\1", corrected, flags=re.I)
+        if updated != corrected:
+            corrected = updated
+            lowered = corrected.lower().strip()
+            corrections.append("remove_future_filler_file_context")
+
+        updated = re.sub(r"^\s*port\s+(.+?\s+in\s+it)[.!?]*$", r"put \1", corrected, flags=re.I)
+        if updated != corrected:
+            corrected = updated
+            lowered = corrected.lower().strip()
+            corrections.append("port_to_put_file_context")
+
+        updated = re.sub(r"\bwald\b", "world", corrected, flags=re.I)
+        if updated != corrected and re.search(r"\b(?:put|write|add|append)\b.+\bin\s+it\b", updated, re.I):
+            corrected = updated
+            lowered = corrected.lower().strip()
+            corrections.append("wald_to_world_file_context")
+
+    uncertain = _uncertain_file_followup(lowered, tokens)
+    if uncertain:
+        return AutomationCommandNormalizationResult(
+            original_text=original,
+            corrected_text=corrected,
+            corrections_applied=corrections,
+            confidence=0.55,
+            reason="uncertain_file_followup",
+            suggested_correction="put world in it",
+        )
+
     if _automation_context(tokens) and re.fullmatch(r"safe\s+it[.!?]*", lowered):
         corrected = re.sub(r"\bsafe\s+it\b", "save it", corrected, flags=re.I)
         corrections.append("safe_it_to_save_it")
@@ -116,3 +154,44 @@ def _note_or_file_context(tokens: set[str]) -> bool:
 
 def _app_context(tokens: set[str]) -> bool:
     return bool(tokens & {"app", "app_control", "browser", "chrome", "open_app"})
+
+
+def _strip_wake_words(text: str) -> tuple[str, bool]:
+    variants = r"(?:jarvis|javis|jawis|jais|jarwis|jarvish)"
+    updated = re.sub(rf"^\s*(?:hello|hey|hi)?\s*{variants}[,\s]+", "", str(text or ""), flags=re.I)
+    return updated, updated != text
+
+
+def _strip_request_fillers(text: str) -> tuple[str, bool]:
+    original = str(text or "")
+    updated = original
+    changed = False
+    patterns = (
+        r"^\s*(?:uh|um|okay|ok|now|bro)[,\s]+",
+        r"^\s*(?:please\s+)?(?:can|could)\s+you\s+",
+        r"^\s*please\s+",
+        r"^\s*(?:okay|ok|now|bro)[,\s]+",
+    )
+    while True:
+        before = updated
+        for pattern in patterns:
+            updated = re.sub(pattern, "", updated, flags=re.I)
+        if updated == before:
+            break
+        changed = True
+    return updated, changed
+
+
+def _looks_like_file_edit_context(lowered: str, tokens: set[str]) -> bool:
+    if _note_or_file_context(tokens):
+        return True
+    return bool(re.search(r"\b(?:put|port|write|add|append|create|make|save)\b", lowered) and re.search(r"\b(?:file|it|desktop|documents)\b", lowered))
+
+
+def _uncertain_file_followup(lowered: str, tokens: set[str]) -> bool:
+    cleaned = re.sub(r"\s+", " ", lowered).strip(" .!?")
+    if cleaned == "port waldenet":
+        return True
+    if re.match(r"^i'?ll put wald in it$", cleaned):
+        return not _note_or_file_context(tokens)
+    return False

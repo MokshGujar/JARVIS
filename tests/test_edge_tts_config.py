@@ -69,6 +69,11 @@ class EdgeTtsConfigTests(unittest.TestCase):
         self.assertFalse(payload["tts"]["thinking_audio"]["stop_on_final_tts"])
         self.assertEqual(payload["tts"]["thinking_audio"]["max_per_request"], 1)
         self.assertGreaterEqual(payload["tts"]["thinking_audio"]["final_tts_wait_timeout_ms"], 250)
+        self.assertEqual(payload["tts"]["thinking_audio"]["mode"], "smart")
+        self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_fast_semantic"])
+        self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_empty_transcript"])
+        self.assertTrue(payload["tts"]["thinking_audio"]["skip_for_clarification"])
+        self.assertGreaterEqual(payload["tts"]["thinking_audio"]["min_delay_ms"], 0)
         self.assertIn("min_record_seconds", payload["stt"])
         self.assertIn("end_silence_seconds", payload["stt"])
 

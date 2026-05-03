@@ -72,7 +72,8 @@ const API = (typeof window !== 'undefined' && window.location.origin)
  * arrives, it contains a UUID string that we send back with every
  * subsequent message so the backend knows which conversation we're in.
  */
-let sessionId = null;
+const CHAT_SESSION_STORAGE_KEY = 'jarvis_chat_session_id';
+let sessionId = localStorage.getItem(CHAT_SESSION_STORAGE_KEY) || null;
 
 /*
  * currentMode — Which AI pipeline to use: 'jarvis', 'general', or 'realtime'.
@@ -188,6 +189,11 @@ let thinkingAudioFinishBeforeFinalTts = true;
 let thinkingAudioStopOnFinalTts = false;
 let thinkingAudioFinalTtsWaitTimeoutMs = 2500;
 let thinkingAudioMaxPerRequest = 1;
+let thinkingAudioMode = 'smart';
+let thinkingAudioSkipForFastSemantic = true;
+let thinkingAudioSkipForEmptyTranscript = true;
+let thinkingAudioSkipForClarification = true;
+let thinkingAudioMinDelayMs = 250;
 const backgroundTaskPolls = new Map();
 let voiceGuardVerifiedUntil = 0;
 let activeStreamController = null;
@@ -240,7 +246,21 @@ async function fetchRuntimeVoiceConfig() {
         thinkingAudioStopOnFinalTts = thinkingAudio.stop_on_final_tts === true;
         thinkingAudioFinalTtsWaitTimeoutMs = Math.max(250, Number(thinkingAudio.final_tts_wait_timeout_ms || thinkingAudioFinalTtsWaitTimeoutMs));
         thinkingAudioMaxPerRequest = Math.max(1, Number(thinkingAudio.max_per_request || thinkingAudioMaxPerRequest));
+        thinkingAudioMode = String(thinkingAudio.mode || thinkingAudioMode || 'smart').toLowerCase();
+        thinkingAudioSkipForFastSemantic = thinkingAudio.skip_for_fast_semantic !== false;
+        thinkingAudioSkipForEmptyTranscript = thinkingAudio.skip_for_empty_transcript !== false;
+        thinkingAudioSkipForClarification = thinkingAudio.skip_for_clarification !== false;
+        thinkingAudioMinDelayMs = Math.max(0, Number(thinkingAudio.min_delay_ms ?? thinkingAudioMinDelayMs));
     } catch (_) {}
+}
+
+function setChatSessionId(nextSessionId) {
+    sessionId = nextSessionId || null;
+    if (sessionId) {
+        localStorage.setItem(CHAT_SESSION_STORAGE_KEY, sessionId);
+    } else {
+        localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+    }
 }
 
 function isBackendSttCaptureMode() {
@@ -1372,6 +1392,41 @@ function playThinkingSound(requestId = null) {
             cancelThinkingSound(false);
             resolve();
         }, 2200);
+    });
+    return thinkingSoundPromise;
+}
+
+function shouldSkipThinkingAudioForText(text) {
+    if (thinkingAudioMode !== 'smart') return false;
+    const value = String(text || '').trim().toLowerCase();
+    if (!value) return thinkingAudioSkipForEmptyTranscript;
+    if (thinkingAudioSkipForClarification && /^(?:port waldenet|i'?ll put wald in it)[.!?]*$/.test(value)) {
+        return true;
+    }
+    if (
+        thinkingAudioSkipForFastSemantic &&
+        /(?:\b(?:create|make)\b.+\bfile\b.+\b(?:write|put|with)\b|\b(?:put|write|add|append)\b.+\b(?:in|to)\s+(?:it|the file|that file)\b)/.test(value)
+    ) {
+        return true;
+    }
+    return false;
+}
+
+function scheduleThinkingSound(text, requestId = null) {
+    clearTimeout(thinkingSoundDelayTimer);
+    if (shouldSkipThinkingAudioForText(text)) {
+        thinkingSoundPromise = Promise.resolve();
+        return thinkingSoundPromise;
+    }
+    const delay = thinkingAudioMode === 'smart' ? Math.max(0, Number(thinkingAudioMinDelayMs || 0)) : 0;
+    if (delay <= 0) {
+        return playThinkingSound(requestId);
+    }
+    const scheduledRequestId = requestId || activeClientRequestId || buildClientRequestId();
+    thinkingSoundPromise = new Promise(resolve => {
+        thinkingSoundDelayTimer = setTimeout(() => {
+            Promise.resolve(playThinkingSound(scheduledRequestId)).finally(resolve);
+        }, delay);
     });
     return thinkingSoundPromise;
 }
@@ -2886,7 +2941,7 @@ function newChat() {
     backgroundTaskPolls.clear();
     stopScreenPreview();
     stopCameraPreview();
-    sessionId = null;
+    setChatSessionId(null);
     pendingVisionDataUrl = null;
     lastScreenShareKind = null;
     if (chatMessages) chatMessages.innerHTML = '';
@@ -3794,7 +3849,7 @@ async function sendVisionMessage(textOverride) {
     if (browserStreamSpeaker) browserStreamSpeaker.reset(clientRequestId);
     if (ttsPlayer) { ttsPlayer.reset(clientRequestId); ttsPlayer.unlock(); }
     if (preStarterPlayer) preStarterPlayer.unlock();
-    playThinkingSound(clientRequestId);
+    scheduleThinkingSound(text, clientRequestId);
     setJarvisVisualState('thinking');
     maybeRestartListening(120);
     const controller = new AbortController();
@@ -3851,7 +3906,7 @@ async function sendVisionMessage(textOverride) {
                 if (!line.startsWith('data: ')) continue;
                 const data = JSON.parse(line.slice(6));
                 if (!isCurrentStreamPayload(data, clientRequestId)) continue;
-                if (data.session_id) sessionId = data.session_id;
+                if (data.session_id) setChatSessionId(data.session_id);
                 if (data.activity) {
                     appendActivity(data.activity);
                     if (
@@ -4005,7 +4060,7 @@ async function sendMessage(textOverride, options = {}) {
     if (ttsPlayer) { ttsPlayer.reset(clientRequestId); ttsPlayer.unlock(); }
     if (preStarterPlayer) preStarterPlayer.unlock();
     cancelThinkingSound();
-    playThinkingSound(clientRequestId);
+    scheduleThinkingSound(text, clientRequestId);
     setJarvisVisualState('thinking');
     maybeRestartListening(120);
 
@@ -4087,7 +4142,7 @@ async function sendMessage(textOverride, options = {}) {
                     if (!isCurrentStreamPayload(data, clientRequestId)) continue;
 
                     // Save the session ID if the server sends one
-                    if (data.session_id) sessionId = data.session_id;
+                    if (data.session_id) setChatSessionId(data.session_id);
 
                     // ACTIVITY — Jarvis flow (query detected, decision, routing): show in left panel
                     if (data.activity) {

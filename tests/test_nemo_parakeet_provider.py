@@ -246,7 +246,7 @@ class NemoParakeetProviderTests(unittest.TestCase):
         self.assertEqual(result["corrections_applied"], [{"from": "Jaris", "to": "Jarvis"}])
 
     def test_default_assistant_name_corrections_are_conservative(self):
-        cases = ("Jarris", "Javi", "Jaris", "Javas", "Jervis", "Javier", "Jawis", "Jais", "Jarwis", "Jarvish")
+        cases = ("Jarris", "Javi", "Javis", "Jaris", "Javas", "Jervis", "Javier", "Jawis", "Jais", "Jarwis", "Jarvish")
         for wrong in cases:
             with self.subTest(wrong=wrong):
                 model = Mock()

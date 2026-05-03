@@ -24,7 +24,7 @@ class STTProviderConfigTests(unittest.TestCase):
         self.assertTrue(section["parakeet_require_wav"])
         self.assertTrue(section["parakeet_post_processing_enabled"])
         self.assertTrue(section["parakeet_domain_correction_enabled"])
-        self.assertEqual(section["parakeet_domain_corrections"], "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis")
+        self.assertEqual(section["parakeet_domain_corrections"], "Jarris=Jarvis|Javi=Jarvis|Javis=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis")
         self.assertFalse(section["parakeet_domain_correction_case_sensitive"])
         self.assertTrue(section["parakeet_domain_correction_word_boundary"])
         self.assertEqual(section["empty_transcript_behavior"], "short_prompt")

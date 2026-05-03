@@ -72,6 +72,12 @@ class AutomationReliabilityTests(unittest.TestCase):
         with patch.object(adapter_module, "SEMANTIC_SAFE_EXECUTION_ENABLED", False):
             self.assertFalse(service.looks_like_semantic_request("put World in it", session_id="s1"))
 
+    def test_obvious_file_automation_semantic_probe_claims_before_legacy(self):
+        service = AutomationService()
+
+        self.assertTrue(service.looks_like_semantic_request("create a file on my desktop named semantic test and write hello", session_id="s1"))
+        self.assertTrue(service.looks_like_semantic_request("Port Waldenet", session_id="s1"))
+
     def test_open_chrome_followup_reuses_pending_browser_context(self):
         service = AutomationService()
         first = service._finalize_open_result("chrome", {"success": True, "action": "open", "message": "Opening Chrome."})

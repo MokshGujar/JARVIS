@@ -142,7 +142,16 @@ class SemanticActionMapper:
             if split is None:
                 return _missing("location", "Where should I save it?")
             parent, filename = split
-            return [self._step(current_steps, "file", "file", "create_file", {"parent": parent, "filename": filename})]
+            resolve = self._step(current_steps, "file", "file", "resolve_path", {"location": parent})
+            create = self._step(
+                current_steps + [resolve],
+                "file",
+                "file",
+                "create_file",
+                {"parent": f"{{{resolve.step_id}.path}}", "filename": filename},
+                depends_on=[resolve.step_id],
+            )
+            return [resolve, create]
 
         if intent == SemanticAutomationIntent.WRITE_FILE:
             if not action.file_path:
@@ -177,16 +186,32 @@ class SemanticActionMapper:
             if split is None:
                 return _missing("location", "Where should I save it?")
             parent, filename = split
-            create = self._step(current_steps, "file", "file", "create_file", {"parent": parent, "filename": filename})
+            resolve = self._step(current_steps, "file", "file", "resolve_path", {"location": parent})
+            create = self._step(
+                current_steps + [resolve],
+                "file",
+                "file",
+                "create_file",
+                {"parent": f"{{{resolve.step_id}.path}}", "filename": filename},
+                depends_on=[resolve.step_id],
+            )
             write = self._step(
-                current_steps + [create],
+                current_steps + [resolve, create],
                 "file",
                 "file",
                 "write_file",
                 {"path": f"{{{create.step_id}.path}}", "content": action.content, "overwrite": False},
                 depends_on=[create.step_id],
             )
-            return [create, write]
+            verify = self._step(
+                current_steps + [resolve, create, write],
+                "file",
+                "file",
+                "verify_exists",
+                {"path": f"{{{create.step_id}.path}}", "expected_content": action.content},
+                depends_on=[write.step_id],
+            )
+            return [resolve, create, write, verify]
 
         if intent == SemanticAutomationIntent.WRITE_NOTE:
             content = action.content

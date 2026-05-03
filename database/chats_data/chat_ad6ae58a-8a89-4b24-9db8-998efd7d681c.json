@@ -1,0 +1,61 @@
+{
+  "session_id": "ad6ae58a-8a89-4b24-9db8-998efd7d681c",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Nice to chat with you, Sir. What's on your mind today?"
+    },
+    {
+      "role": "user",
+      "content": "Create a file on my desktop named semantic test and write hello."
+    },
+    {
+      "role": "assistant",
+      "content": "Done, I created semantic test on your Desktop and wrote hello."
+    },
+    {
+      "role": "user",
+      "content": "I'll put wald in it."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    },
+    {
+      "role": "user",
+      "content": "Put a word in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Which file should I use?"
+    },
+    {
+      "role": "user",
+      "content": "A semantic test."
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "Javis create a file on my desktop named semantic test and write hello"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    }
+  ]
+}

@@ -205,6 +205,11 @@ THINKING_AUDIO_FINAL_TTS_WAIT_TIMEOUT_MS = _getenv_int("THINKING_AUDIO_FINAL_TTS
 THINKING_AUDIO_INTERRUPTIBLE = os.getenv("THINKING_AUDIO_INTERRUPTIBLE", "true").strip().lower() in {"1", "true", "yes", "on"}
 THINKING_AUDIO_CACHE_ENABLED = os.getenv("THINKING_AUDIO_CACHE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 THINKING_AUDIO_DEBUG = os.getenv("THINKING_AUDIO_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_MODE = os.getenv("THINKING_AUDIO_MODE", "smart").strip().lower() or "smart"
+THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC = os.getenv("THINKING_AUDIO_SKIP_FOR_FAST_SEMANTIC", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT = os.getenv("THINKING_AUDIO_SKIP_FOR_EMPTY_TRANSCRIPT", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_SKIP_FOR_CLARIFICATION = os.getenv("THINKING_AUDIO_SKIP_FOR_CLARIFICATION", "true").strip().lower() in {"1", "true", "yes", "on"}
+THINKING_AUDIO_MIN_DELAY_MS = _getenv_int("THINKING_AUDIO_MIN_DELAY_MS", 250)
 TTS_VOICE = EDGE_TTS_VOICE
 TTS_RATE = EDGE_TTS_RATE
 
@@ -220,7 +225,7 @@ STT_FAIL_FAST_ON_WARMUP_ERROR = os.getenv("STT_FAIL_FAST_ON_WARMUP_ERROR", "fals
 STT_DOMAIN_CORRECTION_ENABLED = os.getenv("STT_DOMAIN_CORRECTION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 STT_DOMAIN_CORRECTIONS = os.getenv(
     "STT_DOMAIN_CORRECTIONS",
-    "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
+    "Jarris=Jarvis|Javi=Jarvis|Javis=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
 ).strip()
 STT_DOMAIN_CORRECTION_CASE_SENSITIVE = os.getenv("STT_DOMAIN_CORRECTION_CASE_SENSITIVE", "false").strip().lower() in {"1", "true", "yes", "on"}
 STT_DOMAIN_CORRECTION_WORD_BOUNDARY = os.getenv("STT_DOMAIN_CORRECTION_WORD_BOUNDARY", "true").strip().lower() in {"1", "true", "yes", "on"}

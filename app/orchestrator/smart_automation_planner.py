@@ -321,42 +321,82 @@ class SmartAutomationPlanner:
         return []
 
     def _plan_file_request(self, cleaned: str, original: str, context: AutomationContext | None) -> list[SemanticAutomationAction]:
+        save_content = re.match(
+            r"^save (?P<content>.+?) as (?P<name>.+?)(?: on (?P<location>(?:my )?desktop|documents|downloads|home))?$",
+            cleaned,
+        )
+        if save_content:
+            location = self._normalize_location(save_content.group("location"))
+            name = save_content.group("name")
+            content = self._strip_filler(save_content.group("content"))
+            return [
+                self._action(
+                    SemanticAutomationIntent.SAVE_CONTENT_AS_FILE,
+                    AutomationDomain.FILE,
+                    AutomationMode.DIRECT_TOOL,
+                    target=name,
+                    content=content,
+                    file_path=self._compose_file_path(location, name, default_location="desktop"),
+                    preferred_tool="file",
+                )
+            ]
+
         create_write = re.match(
-            r"^create a file(?: on (?P<location>desktop|documents|downloads|home))? named (?P<name>.+?) and write (?P<content>.+?)(?: in it)?$",
+            r"^(?:create|make) (?:a )?(?:text )?file(?: on (?P<location>(?:my )?desktop|documents|downloads|home))? (?:named|name|called) (?P<name>.+?) (?:and (?:write|put) (?P<content>.+?)(?: in it)?|with (?P<with_content>.+?) in it)$",
             cleaned,
         )
         if create_write:
-            path = self._compose_file_path(create_write.group("location"), create_write.group("name"))
-            content = self._strip_filler(create_write.group("content"))
+            location = self._normalize_location(create_write.group("location"))
+            path = self._compose_file_path(location, create_write.group("name"), default_location="desktop")
+            content = self._strip_filler(create_write.group("content") or create_write.group("with_content"))
             return [
                 self._action(SemanticAutomationIntent.CREATE_FILE, AutomationDomain.FILE, AutomationMode.DIRECT_TOOL, file_path=path, target=create_write.group("name"), preferred_tool="file"),
                 self._action(SemanticAutomationIntent.WRITE_FILE, AutomationDomain.FILE, AutomationMode.DIRECT_TOOL, file_path=path, content=content, preferred_tool="file"),
             ]
 
-        create = re.match(r"^create a file(?: on (?P<location>desktop|documents|downloads|home))? named (?P<name>.+)$", cleaned)
+        create = re.match(r"^(?:create|make) (?:a )?(?:text )?file(?: on (?P<location>(?:my )?desktop|documents|downloads|home))? (?:named|name|called) (?P<name>.+)$", cleaned)
         if create:
+            location = self._normalize_location(create.group("location"))
+            name = create.group("name")
+            if re.search(r"\band\s+in\s+(?:that|the)\s+file\s+(?:add|write|append|put|insert)\b", name):
+                return []
             return [
                 self._action(
                     SemanticAutomationIntent.CREATE_FILE,
                     AutomationDomain.FILE,
                     AutomationMode.DIRECT_TOOL,
-                    file_path=self._compose_file_path(create.group("location"), create.group("name")),
-                    target=create.group("name"),
+                    file_path=self._compose_file_path(location, name),
+                    target=name,
                     preferred_tool="file",
                 )
             ]
 
-        put_in_it = re.match(r"^put (?P<content>.+?) in it$", cleaned)
-        if put_in_it:
-            original_put = re.match(r"^put (?P<content>.+?) in it$", original.strip(), flags=re.I)
-            path = context.last_created_file_path if context and context.last_created_file_path else None
+        followup = re.match(
+            r"^(?:(?P<verb>put|write|add|append)\s+)(?P<content>.+?)(?:\s+(?:in|to)\s+(?P<target>it|the file|that file|.+))?$",
+            cleaned,
+        )
+        if followup and self._looks_like_file_followup(followup, context):
+            content = self._strip_filler(followup.group("content"))
+            target_text = self._strip_filler(followup.group("target") or "it")
+            path = self._resolve_file_followup_target(target_text, context)
+            original_followup = re.match(
+                r"^(?:(?:put|write|add|append)\s+)(?P<content>.+?)(?:\s+(?:in|to)\s+(?:it|the file|that file|.+))?$",
+                original.strip(),
+                flags=re.I,
+            )
+            if original_followup and content.lower() in {"world", "word"}:
+                content = self._strip_filler(original_followup.group("content"))
+            if content.lower() == "a word":
+                content = "word"
+            if content.lower() == "this" and context and context.last_content:
+                content = context.last_content
             return [
                 self._action(
                     SemanticAutomationIntent.APPEND_FILE,
                     AutomationDomain.FILE,
                     AutomationMode.DIRECT_TOOL,
                     file_path=path,
-                    content=self._strip_filler((original_put or put_in_it).group("content")),
+                    content=content,
                     preferred_tool="file",
                     requires_context=True,
                     missing_fields=[] if path else ["file"],
@@ -397,7 +437,7 @@ class SmartAutomationPlanner:
                 )
             ]
 
-        add_file = re.match(r"^add this to that file$", cleaned)
+        add_file = re.match(r"^add this to (?:that file|it|the file)$", cleaned)
         if add_file:
             content = context.last_content if context else None
             path = context.resolve_reference("that file") if context else None
@@ -789,9 +829,46 @@ class SmartAutomationPlanner:
         return " ".join(part.capitalize() for part in re.sub(r"\s+", " ", str(value or "").strip()).split())
 
     @staticmethod
-    def _compose_file_path(location: str | None, name: str | None) -> str | None:
+    def _compose_file_path(location: str | None, name: str | None, *, default_location: str | None = None) -> str | None:
         clean_name = re.sub(r"\s+", " ", str(name or "").strip()).strip(" .!?")
         if not clean_name:
             return None
         filename = clean_name if "." in clean_name else f"{clean_name}.txt"
-        return f"{location}/{filename}" if location else filename
+        location_value = SmartAutomationPlanner._normalize_location(location) or SmartAutomationPlanner._normalize_location(default_location)
+        if not location_value:
+            return filename
+        return f"{location_value}/{filename}"
+
+    @staticmethod
+    def _normalize_location(location: str | None) -> str | None:
+        value = re.sub(r"\s+", " ", str(location or "").strip().lower()).strip(" .!?")
+        if value.startswith("my "):
+            value = value[3:]
+        return value or None
+
+    @staticmethod
+    def _looks_like_file_followup(match: re.Match[str], context: AutomationContext | None) -> bool:
+        target = str(match.group("target") or "").strip().lower()
+        verb = str(match.group("verb") or "").strip().lower()
+        if target in {"it", "the file", "that file"}:
+            return True
+        if target and context and (context.last_created_file_path or context.last_edited_file_path or context.last_file_path):
+            return True
+        return verb == "append" and bool(context and (context.last_created_file_path or context.last_edited_file_path or context.last_file_path))
+
+    @staticmethod
+    def _resolve_file_followup_target(target_text: str, context: AutomationContext | None) -> str | None:
+        if context is None:
+            return None
+        target = re.sub(r"\s+", " ", str(target_text or "").strip().lower()).strip(" .!?")
+        if target in {"", "it", "the file", "that file", "same file"}:
+            value = context.last_created_file_path or context.last_edited_file_path or context.last_file_path
+            return str(value) if isinstance(value, str) and value else None
+        candidates = [context.last_created_file_path, context.last_edited_file_path, context.last_file_path]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            stem = re.sub(r"[_-]+", " ", str(candidate).replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0].lower())
+            if target == stem or target in stem:
+                return str(candidate)
+        return None

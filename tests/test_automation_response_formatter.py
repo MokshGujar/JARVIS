@@ -109,6 +109,18 @@ class AutomationResponseFormatterTests(unittest.TestCase):
         self.assertEqual(missing["message"], "That tool is not available right now.")
         self.assertEqual(dependency["message"], "I started that, but a required step did not finish.")
 
+    def test_uncertain_semantic_clarification_is_natural(self):
+        result = normalize_automation_response(
+            {
+                "success": False,
+                "action": "semantic_clarification_required",
+                "message": "Did you mean put world in it?",
+            }
+        )
+
+        self.assertEqual(result["message"], "Did you mean put world in it?")
+        self.assertEqual(result["spoken_text"], "Did you mean put world in it?")
+
 
 if __name__ == "__main__":
     unittest.main()

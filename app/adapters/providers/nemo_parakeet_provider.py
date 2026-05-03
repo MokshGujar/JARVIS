@@ -325,7 +325,7 @@ class NemoParakeetProvider:
             return self._parse_corrections_string(env_value)
         raw = self.config.get(
             "parakeet_domain_corrections",
-            "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
+            "Jarris=Jarvis|Javi=Jarvis|Javis=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
         )
         if isinstance(raw, dict):
             return {str(key): str(value) for key, value in raw.items()}

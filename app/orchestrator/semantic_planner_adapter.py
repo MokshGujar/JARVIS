@@ -45,6 +45,39 @@ STAGED_CONFIRMATION_INTENTS = {
     SemanticAutomationIntent.RESTART_SYSTEM,
 }
 GENERIC_CONFIRMATION_REPLIES = {"yes", "y", "yes do it", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "cancel that", "stop", "never mind"}
+LIVE_FILE_INTENTS = {
+    SemanticAutomationIntent.CREATE_FILE,
+    SemanticAutomationIntent.WRITE_FILE,
+    SemanticAutomationIntent.APPEND_FILE,
+    SemanticAutomationIntent.SAVE_CONTENT_AS_FILE,
+}
+LIVE_SAFE_SEMANTIC_INTENTS = {
+    SemanticAutomationIntent.SEARCH_WEB,
+    SemanticAutomationIntent.SEARCH_VISIBLE_BROWSER,
+    SemanticAutomationIntent.REPLACE_ADDRESS_OR_SEARCH,
+    SemanticAutomationIntent.WRITE_NOTE,
+    SemanticAutomationIntent.APPEND_TO_NOTE,
+    SemanticAutomationIntent.READ_ACTIVE_WINDOW,
+    SemanticAutomationIntent.READ_SCREEN_OR_WINDOW,
+    SemanticAutomationIntent.TAKE_SCREENSHOT,
+    SemanticAutomationIntent.SYSTEM_STATUS,
+}
+LIVE_STAGED_INTENTS = {
+    SemanticAutomationIntent.DELETE_FILE,
+    SemanticAutomationIntent.DRAFT_MESSAGE,
+    SemanticAutomationIntent.SEND_MESSAGE_AFTER_CONFIRMATION,
+    SemanticAutomationIntent.CALL_CONTACT,
+    SemanticAutomationIntent.CLICK_TEXT,
+    SemanticAutomationIntent.CLICK_COORDINATES,
+    SemanticAutomationIntent.SUBMIT_FORM,
+    SemanticAutomationIntent.PAYMENT_OR_PURCHASE_SUBMIT,
+    SemanticAutomationIntent.LOGIN_SUBMIT,
+    SemanticAutomationIntent.CLOSE_WINDOW,
+    SemanticAutomationIntent.RUN_TERMINAL_COMMAND,
+    SemanticAutomationIntent.APPLY_CODE_EDIT,
+    SemanticAutomationIntent.SHUTDOWN_SYSTEM,
+    SemanticAutomationIntent.RESTART_SYSTEM,
+}
 
 @dataclass(slots=True)
 class DryRunRequest:
@@ -144,7 +177,10 @@ class SemanticPlannerAdapter:
         planner = self._get_planner()
         result = planner.plan(text, context=context, dry_run=False)
         actions = list(getattr(result, "semantic_actions", []) or [])
-        return result if actions else None
+        suggestion = getattr(result, "metadata", {}).get("suggested_correction") if isinstance(getattr(result, "metadata", {}), dict) else None
+        if suggestion:
+            return result
+        return result if actions and _live_actions_allowed(actions, context=context) else None
 
     def try_live_result(self, text: str, context: AutomationContext | None = None, scenario_policy: Any | None = None) -> ActionPlan | dict[str, Any] | None:
         if is_explicit_dry_run_request(text) or not self.enabled or not self.safe_execution_enabled:
@@ -155,21 +191,31 @@ class SemanticPlannerAdapter:
         self.last_semantic_result = result
         actions = list(getattr(result, "semantic_actions", []) or [])
         if not actions:
-            logger.info("[SEMANTIC] fallback=legacy reason=no_semantic_claim")
+            suggestion = getattr(result, "metadata", {}).get("suggested_correction") if isinstance(getattr(result, "metadata", {}), dict) else None
+            if suggestion:
+                self._log_claim(result, claimed=True, no_claim_reason="", mapper_status="clarification", final_route="semantic_clarification")
+                return self._clarification_response(str(suggestion))
+            self._log_claim(result, claimed=False, no_claim_reason=_no_claim_reason(text, result), mapper_status="not_mapped", final_route="legacy")
+            return None
+        if not _live_actions_allowed(actions, context=context):
+            self._log_claim(result, claimed=False, no_claim_reason="not_live_semantic_scope", mapper_status="not_mapped", final_route="legacy")
             return None
 
         missing_fields = list(getattr(result, "missing_fields", []) or [])
         if missing_fields:
             logger.info("[SEMANTIC] blocked reason=missing_context")
+            self._log_claim(result, claimed=True, no_claim_reason="", mapper_status="missing_fields", final_route="semantic_response")
             return self._missing_fields_response(result)
 
         confirmation_response = self._stage_confirmation_response(actions, result, context)
         if confirmation_response is not None:
             logger.info("[SEMANTIC] blocked reason=confirmation_required")
+            self._log_claim(result, claimed=True, no_claim_reason="", mapper_status="confirmation_required", final_route="semantic_response")
             return confirmation_response
 
         duplicate_response, fingerprints = self._duplicate_response(actions, result, context)
         if duplicate_response is not None:
+            self._log_claim(result, claimed=True, no_claim_reason="", mapper_status="duplicate_confirmation", final_route="semantic_response")
             return duplicate_response
 
         mapper = SemanticActionMapper(scenario_policy=scenario_policy)
@@ -185,9 +231,11 @@ class SemanticPlannerAdapter:
             if str(mapped.response.get("action") or "") == "semantic_action_blocked":
                 reason = "risky"
             logger.info("[SEMANTIC] blocked reason=%s", reason)
+            self._log_claim(result, claimed=True, no_claim_reason="", mapper_status=reason, final_route="semantic_response")
             return mapped.response
         context_label = _context_label(actions[0], context)
         logger.info("[SEMANTIC] claimed=true intent=%s context=%s", actions[0].intent.value, context_label)
+        self._log_claim(result, claimed=True, no_claim_reason="", mapper_status="mapped", final_route="semantic_safe_execution")
         return mapped.plan
 
     def try_dry_run_response(self, text: str, context: AutomationContext | None = None) -> dict[str, Any] | None:
@@ -230,6 +278,51 @@ class SemanticPlannerAdapter:
             "semantic_execution": True,
             "executable": False,
         }
+
+    def _clarification_response(self, suggestion: str) -> dict[str, Any]:
+        message = f"Did you mean {suggestion}?"
+        return {
+            "success": False,
+            "action": "semantic_clarification_required",
+            "message": message,
+            "display_text": message,
+            "spoken_text": message,
+            "requires_followup": True,
+            "semantic_execution": True,
+            "executable": False,
+            "suggested_correction": suggestion,
+        }
+
+    def _log_claim(
+        self,
+        result: Any,
+        *,
+        claimed: bool,
+        no_claim_reason: str,
+        mapper_status: str,
+        final_route: str,
+    ) -> None:
+        actions = list(getattr(result, "semantic_actions", []) or [])
+        domain = actions[0].domain.value if actions else getattr(getattr(result, "domain", None), "value", getattr(result, "domain", "unknown"))
+        intent = actions[0].intent.value if actions else "none"
+        original = _safe_claim_text(getattr(result, "original_text", ""))
+        corrected = _safe_claim_text(getattr(result, "corrected_text", ""))
+        corrections = list(getattr(result, "corrections_applied", []) or [])
+        missing = list(getattr(result, "missing_fields", []) or [])
+        logger.info(
+            '[SEMANTIC-CLAIM] original="%s" normalized="%s" corrected="%s" wake_word_removed=%s domain=%s intent=%s claimed=%s no_claim_reason=%s missing_fields=%s mapper_status=%s final_route=%s',
+            original,
+            corrected,
+            corrected,
+            str("wake_word_removed" in corrections).lower(),
+            domain or "unknown",
+            intent,
+            str(bool(claimed)).lower(),
+            no_claim_reason or "none",
+            ",".join(missing) if missing else "none",
+            mapper_status,
+            final_route,
+        )
 
     def _duplicate_response(self, actions: list[SemanticAutomationAction], result: Any, context: AutomationContext | None) -> tuple[dict[str, Any] | None, list[Any]]:
         if not self.duplicate_protection_enabled or context is None:
@@ -570,6 +663,17 @@ def _context_label(action: SemanticAutomationAction, context: AutomationContext 
     return "none"
 
 
+def _live_actions_allowed(actions: list[SemanticAutomationAction], *, context: AutomationContext | None) -> bool:
+    intents = {action.intent for action in actions}
+    if intents and intents.issubset(LIVE_FILE_INTENTS):
+        return True
+    if intents and intents.issubset(LIVE_SAFE_SEMANTIC_INTENTS):
+        return True
+    if context is not None and intents and intents.issubset(LIVE_STAGED_INTENTS):
+        return True
+    return False
+
+
 def _fallback_step_label(action: str, args: dict[str, Any]) -> str:
     labels = {
         "open": f"Open or focus {_title(str(args.get('app') or args.get('target') or 'the app'))}.",
@@ -779,3 +883,20 @@ def _plan_is_safe_repeat(plan: ActionPlan) -> bool:
         if step.action in blocked_actions:
             return False
     return True
+
+
+def _safe_claim_text(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"\b(?:password|passcode|otp|api\s*key|access\s*token|secret)\b\s*[:=]?\s*\S+", "[REDACTED]", text, flags=re.I)
+    return text if len(text) <= 160 else f"{text[:157].rstrip()}..."
+
+
+def _no_claim_reason(text: str, result: Any) -> str:
+    lowered = re.sub(r"\s+", " ", str(getattr(result, "corrected_text", text) or text).strip().lower())
+    if re.search(r"\b(?:create|make)\b.*\bfile\b", lowered) and not re.search(r"\b(?:named|name|called)\b", lowered):
+        return "no_file_name"
+    if re.search(r"\b(?:create|make)\b.*\bfile\b", lowered) and not re.search(r"\b(?:write|put|with)\b", lowered):
+        return "no_content"
+    if re.search(r"\b(?:file|desktop|put|write|append|save)\b", lowered):
+        return "unsupported_pattern"
+    return "general_chat"

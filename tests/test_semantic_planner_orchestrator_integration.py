@@ -266,6 +266,7 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
             semantic_adapter=SemanticPlannerAdapter(
                 smart_automation_enabled=True,
                 semantic_planner_enabled=True,
+                safe_execution_enabled=False,
                 dry_run_enabled=True,
                 planner_factory=lambda: fake_planner,
             ),
@@ -291,6 +292,7 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
             semantic_adapter=SemanticPlannerAdapter(
                 smart_automation_enabled=True,
                 semantic_planner_enabled=True,
+                safe_execution_enabled=False,
                 dry_run_enabled=True,
                 planner_factory=lambda: fake_planner,
             ),
@@ -355,6 +357,7 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
             semantic_adapter=SemanticPlannerAdapter(
                 smart_automation_enabled=True,
                 semantic_planner_enabled=True,
+                safe_execution_enabled=False,
                 planner_factory=lambda: fake_planner,
             ),
             enforce_policy=False,

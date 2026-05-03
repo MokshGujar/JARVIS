@@ -515,6 +515,9 @@ class AutomationService:
         context = self._automation_context_for(session_id)
         if self._looks_like_semantic_confirmation_turn(command, context=context):
             return True
+        if self._looks_like_whatsapp_command(str(command or "").strip().lower()):
+            logger.info("[SEMANTIC] fallback=legacy reason=existing_whatsapp_router")
+            return False
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
         adapter = probe_orchestrator.semantic_adapter
         if not adapter.enabled or not adapter.safe_execution_enabled:
@@ -1205,6 +1208,8 @@ class AutomationService:
         return orchestrator.execute(ToolContext(command=command, intent=route.intent))
 
     def _execute_multistep_tool_plan(self, command: str) -> Dict[str, str | bool] | None:
+        if self._looks_like_whatsapp_command(str(command or "").strip().lower()):
+            return None
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
         tool_context = ToolContext(
             command=command,

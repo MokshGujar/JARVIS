@@ -1,0 +1,125 @@
+{
+  "session_id": "dd1eec55-b636-4b53-b17f-09688711b181",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Hello, Jarvis."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, nice to talk to you, Sir. What's on your mind today?"
+    },
+    {
+      "role": "user",
+      "content": "Jarvis create a file on my desktop named semantic test and write hello in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Done, I created semantic test on your Desktop and wrote hello."
+    },
+    {
+      "role": "user",
+      "content": "Port Waldenet."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "Port Waldenet."
+    },
+    {
+      "role": "assistant",
+      "content": "I couldn't find any information on Port Waldenet, it's possible it may not exist or I'm not aware of it. Can you provide more context or details about Port Waldenet, Sir?"
+    },
+    {
+      "role": "user",
+      "content": "Put world in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Which file should I use?"
+    },
+    {
+      "role": "user",
+      "content": "Semantic test."
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "Put Wald in it."
+    },
+    {
+      "role": "assistant",
+      "content": "Which file should I use?"
+    },
+    {
+      "role": "user",
+      "content": "Semantic test"
+    },
+    {
+      "role": "assistant",
+      "content": "Let me take a look..."
+    },
+    {
+      "role": "user",
+      "content": "They always tell Rahul that I will be late."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "They always tell Rahul that I will be late."
+    },
+    {
+      "role": "assistant",
+      "content": "It seems like Rahul often hears that you're running behind schedule, Sir."
+    },
+    {
+      "role": "user",
+      "content": "Tell Rahul that I will be late."
+    },
+    {
+      "role": "assistant",
+      "content": "I drafted the message to Rahul. Should I send it?"
+    },
+    {
+      "role": "user",
+      "content": "To be honest, change Rahul to Suhani."
+    },
+    {
+      "role": "assistant",
+      "content": ""
+    },
+    {
+      "role": "user",
+      "content": "To be honest, change Rahul to Suhani."
+    },
+    {
+      "role": "assistant",
+      "content": "I'll make the change, the message now says you'll be late and it's addressed to Suhani."
+    },
+    {
+      "role": "user",
+      "content": "Send the message."
+    },
+    {
+      "role": "assistant",
+      "content": "I'm working on the content writing in the background. I'll open it for you when it's ready."
+    }
+  ]
+}

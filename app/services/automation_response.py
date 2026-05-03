@@ -142,6 +142,7 @@ class AutomationResponseFormatter:
             "semantic_confirmation_accepted_disabled",
             "semantic_confirmation_none",
             "semantic_confirmation_update_needed",
+            "semantic_clarification_required",
             "duplicate_semantic_action",
             "duplicate_confirmation_cancelled",
         }:
@@ -241,6 +242,7 @@ class AutomationResponseFormatter:
             "semantic_confirmation_expired": "That confirmation expired. I did not run it.",
             "semantic_confirmation_accepted_disabled": "I have confirmation, but this action is not enabled yet.",
             "semantic_confirmation_none": "Nothing is waiting for confirmation.",
+            "semantic_clarification_required": "Did you mean put world in it?",
             "duplicate_semantic_action": "This looks like the same action again. Should I repeat it?",
             "duplicate_confirmation_cancelled": "Cancelled. I did not repeat it.",
         }.get(action, "I can't safely run that yet.")

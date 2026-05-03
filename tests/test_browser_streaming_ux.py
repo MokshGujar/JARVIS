@@ -47,7 +47,8 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
             script = handle.read()
 
         self.assertIn("class ThinkingAudioPlayer", script)
-        self.assertIn("playThinkingSound(clientRequestId);", script)
+        self.assertIn("scheduleThinkingSound(text, clientRequestId);", script)
+        self.assertIn("function scheduleThinkingSound(text, requestId = null)", script)
         self.assertIn("fetch(`${API}/tts/thinking`", script)
         self.assertIn("let thinkingAudioPlayedForRequestId = null;", script)
         self.assertIn("thinkingAudioPlayedForRequestId === resolvedRequestId", script)
@@ -150,6 +151,30 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         self.assertIn("if ((error?.message || error) === 'empty_transcript')", script)
         self.assertIn("handleEmptyTranscript();", script)
         self.assertIn("return false;", script)
+
+    def test_session_id_persists_across_reload_until_new_chat(self):
+        with open("frontend/script.js", encoding="utf-8") as handle:
+            script = handle.read()
+
+        self.assertIn("const CHAT_SESSION_STORAGE_KEY = 'jarvis_chat_session_id';", script)
+        self.assertIn("let sessionId = localStorage.getItem(CHAT_SESSION_STORAGE_KEY) || null;", script)
+        self.assertIn("function setChatSessionId(nextSessionId)", script)
+        self.assertIn("localStorage.setItem(CHAT_SESSION_STORAGE_KEY, sessionId);", script)
+        self.assertIn("localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);", script)
+        self.assertIn("if (data.session_id) setChatSessionId(data.session_id);", script)
+        self.assertIn("setChatSessionId(null);", script)
+
+    def test_smart_thinking_audio_skips_fast_semantic_and_clarification(self):
+        with open("frontend/script.js", encoding="utf-8") as handle:
+            script = handle.read()
+
+        self.assertIn("thinkingAudioMode = String(thinkingAudio.mode", script)
+        self.assertIn("thinkingAudioSkipForFastSemantic = thinkingAudio.skip_for_fast_semantic !== false;", script)
+        self.assertIn("thinkingAudioSkipForEmptyTranscript = thinkingAudio.skip_for_empty_transcript !== false;", script)
+        self.assertIn("thinkingAudioSkipForClarification = thinkingAudio.skip_for_clarification !== false;", script)
+        self.assertIn("function shouldSkipThinkingAudioForText(text)", script)
+        self.assertIn("port waldenet", script)
+        self.assertIn("thinkingAudioMinDelayMs", script)
 
 
 if __name__ == "__main__":

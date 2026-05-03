@@ -43,6 +43,28 @@ class STTAutomationNormalizationTests(unittest.TestCase):
         self.assertEqual(result.corrections_applied, [])
         self.assertEqual(result.reason, "unchanged")
 
+    def test_wake_words_and_fillers_are_removed_for_automation(self):
+        result = normalize_automation_command("Javis please can you create a file on my desktop named notes and write hello")
+
+        self.assertEqual(result.corrected_text, "create a file on my desktop named notes and write hello")
+        self.assertIn("wake_word_removed", result.corrections_applied)
+        self.assertIn("filler_removed", result.corrections_applied)
+
+    def test_file_context_corrects_wald_and_port_without_fuzzy_chat_rewrite(self):
+        corrected = normalize_automation_command("I'll put wald in it", context={"domain": "file"})
+        unchanged = normalize_automation_command("the wald is fictional")
+
+        self.assertEqual(corrected.corrected_text, "put world in it")
+        self.assertIn("wald_to_world_file_context", corrected.corrections_applied)
+        self.assertEqual(unchanged.corrected_text, "the wald is fictional")
+
+    def test_port_waldenet_requests_uncertain_clarification(self):
+        result = normalize_automation_command("Port Waldenet")
+
+        self.assertEqual(result.suggested_correction, "put world in it")
+        self.assertEqual(result.reason, "uncertain_file_followup")
+        self.assertLess(result.confidence, 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()
