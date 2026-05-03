@@ -210,6 +210,15 @@ class STTTranscribeEndpointTests(unittest.TestCase):
         self.assertIn("warmup_error", stt)
         self.assertIn("cache_enabled", stt)
         self.assertIn("domain_correction_enabled", stt)
+        self.assertEqual(stt["empty_transcript_behavior"], "short_prompt")
+        self.assertEqual(stt["empty_transcript_prompt"], "I didn't catch that.")
+        semantic = response.json()["semantic"]
+        self.assertIn("smart_enabled", semantic)
+        self.assertIn("planner_enabled", semantic)
+        self.assertIn("safe_execution_enabled", semantic)
+        self.assertIn("context_enabled", semantic)
+        self.assertIn("duplicate_protection_enabled", semantic)
+        self.assertIn("dry_run_enabled", semantic)
 
     def test_health_does_not_load_parakeet_model(self):
         with (

@@ -220,10 +220,12 @@ STT_FAIL_FAST_ON_WARMUP_ERROR = os.getenv("STT_FAIL_FAST_ON_WARMUP_ERROR", "fals
 STT_DOMAIN_CORRECTION_ENABLED = os.getenv("STT_DOMAIN_CORRECTION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 STT_DOMAIN_CORRECTIONS = os.getenv(
     "STT_DOMAIN_CORRECTIONS",
-    "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis",
+    "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
 ).strip()
 STT_DOMAIN_CORRECTION_CASE_SENSITIVE = os.getenv("STT_DOMAIN_CORRECTION_CASE_SENSITIVE", "false").strip().lower() in {"1", "true", "yes", "on"}
 STT_DOMAIN_CORRECTION_WORD_BOUNDARY = os.getenv("STT_DOMAIN_CORRECTION_WORD_BOUNDARY", "true").strip().lower() in {"1", "true", "yes", "on"}
+STT_EMPTY_TRANSCRIPT_BEHAVIOR = os.getenv("STT_EMPTY_TRANSCRIPT_BEHAVIOR", "short_prompt").strip().lower() or "short_prompt"
+STT_EMPTY_TRANSCRIPT_PROMPT = os.getenv("STT_EMPTY_TRANSCRIPT_PROMPT", "I didn't catch that.").strip() or "I didn't catch that."
 # Voice identity runtime:
 # - nemo_titanet: production backend for centralized speaker verification
 # - fingerprint: dependency-free local/test fallback
@@ -274,6 +276,12 @@ VOICE_IDENTITY_ENROLL_MATCH_THRESHOLD = _getenv_float(
 # ============================================================================
 # FACE AUTHENTICATION + LIVENESS CONFIGURATION
 # ============================================================================
+FACE_GATE_ENABLED = os.getenv("FACE_GATE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+FACE_GATE_SCOPE = os.getenv("FACE_GATE_SCOPE", "launcher_only").strip().lower() or "launcher_only"
+FACE_IN_APP_RECOGNITION_ENABLED = os.getenv("FACE_IN_APP_RECOGNITION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+FACE_STEP_UP_FOR_TOOLS_ENABLED = os.getenv("FACE_STEP_UP_FOR_TOOLS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+FACE_STATUS_IN_APP_ENABLED = os.getenv("FACE_STATUS_IN_APP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+FACE_VERIFY_IN_APP_ENABLED = os.getenv("FACE_VERIFY_IN_APP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 FACE_IDENTITY_BACKEND = os.getenv("FACE_IDENTITY_BACKEND", "insightface").strip().lower() or "insightface"
 FACE_RECOGNITION_MODEL_NAME = os.getenv("FACE_RECOGNITION_MODEL_NAME", "buffalo_l").strip() or "buffalo_l"
 FACE_RECOGNITION_DET_SIZE = _getenv_int("FACE_RECOGNITION_DET_SIZE", 320)

@@ -112,6 +112,18 @@ class SmartAutomationPlannerTests(unittest.TestCase):
         self.assertTrue(result.requires_confirmation)
         self.assertEqual(result.safety_level, "CRITICAL")
 
+    def test_put_world_in_it_claims_file_followup_or_asks_for_file(self):
+        missing = self.planner.plan("put World in it", context=AutomationContext(session_id="s1"))
+        context = AutomationContext(session_id="s1", last_created_file_path="notes.txt")
+        claimed = self.planner.plan("put World in it", context=context)
+
+        self.assertEqual(intents(missing), [SemanticAutomationIntent.APPEND_FILE])
+        self.assertEqual(missing.missing_fields, ["file"])
+        self.assertEqual(missing.follow_up_question, "Which file should I use?")
+        self.assertEqual(intents(claimed), [SemanticAutomationIntent.APPEND_FILE])
+        self.assertEqual(claimed.semantic_actions[0].file_path, "notes.txt")
+        self.assertEqual(claimed.semantic_actions[0].content, "World")
+
     def test_click_delete_requires_confirmation(self):
         result = self.planner.plan("click delete")
 

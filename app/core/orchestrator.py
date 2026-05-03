@@ -8,6 +8,7 @@ from app.core.contracts import AssistantContext, AssistantRequest, CapabilityRes
 from app.services.chat_service import CAMERA_BYPASS_TOKEN, _save_camera_image
 from app.services.decision_types import CATEGORY_CAMERA, CATEGORY_GENERAL, CATEGORY_MIXED, CATEGORY_REALTIME, CATEGORY_TASK, HEAVY_INTENTS
 from app.services.task_executor import TaskResponse
+from config import FACE_STEP_UP_FOR_TOOLS_ENABLED
 
 
 class AssistantOrchestrator:
@@ -201,7 +202,7 @@ class AssistantOrchestrator:
 
         if (
             self.automation_capability
-            and self.automation_capability.looks_like_request(context.message)
+            and self.automation_capability.looks_like_request(context.message, session_id=context.session_id)
             and not self.conversation_service._looks_like_mixed_action_and_chat(context.message)
         ):
             service = getattr(self.automation_capability, "automation_service", None)
@@ -386,6 +387,8 @@ class AssistantOrchestrator:
         if not self.command_risk_service or not self.face_identity_service:
             return None
         risk = self.command_risk_service.classify(command_text, command_action=command_action)
+        if command_action in {"automation", "task", "phone", "reminder", "instant"} and not FACE_STEP_UP_FOR_TOOLS_ENABLED:
+            return None
         if not self.face_identity_service.validate_session(face_session_id):
             return (
                 "Face verification is required before I can run that command.",

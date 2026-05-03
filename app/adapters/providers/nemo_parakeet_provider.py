@@ -323,7 +323,10 @@ class NemoParakeetProvider:
         env_value = str(os.environ.get("STT_DOMAIN_CORRECTIONS") or os.environ.get("PARAKEET_DOMAIN_CORRECTIONS") or "").strip()
         if env_value:
             return self._parse_corrections_string(env_value)
-        raw = self.config.get("parakeet_domain_corrections", "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis")
+        raw = self.config.get(
+            "parakeet_domain_corrections",
+            "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
+        )
         if isinstance(raw, dict):
             return {str(key): str(value) for key, value in raw.items()}
         return self._parse_corrections_string(str(raw or ""))

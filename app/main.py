@@ -129,7 +129,11 @@ from config import (
     THINKING_AUDIO_CACHE_ENABLED, THINKING_AUDIO_DEBUG,
     STT_MIN_RECORD_SECONDS, STT_END_SILENCE_SECONDS, STT_MAX_RECORD_SECONDS, STT_SPEECH_PADDING_MS, STT_CAPTURE_MODE,
     STT_PROVIDER_CACHE_ENABLED, PARAKEET_PRELOAD_ON_STARTUP, STT_WARMUP_ON_STARTUP, STT_FAIL_FAST_ON_WARMUP_ERROR,
-    STT_DOMAIN_CORRECTION_ENABLED,
+    STT_DOMAIN_CORRECTION_ENABLED, STT_EMPTY_TRANSCRIPT_BEHAVIOR, STT_EMPTY_TRANSCRIPT_PROMPT,
+    FACE_GATE_ENABLED, FACE_GATE_SCOPE, FACE_IN_APP_RECOGNITION_ENABLED, FACE_STEP_UP_FOR_TOOLS_ENABLED,
+    FACE_STATUS_IN_APP_ENABLED, FACE_VERIFY_IN_APP_ENABLED,
+    SMART_AUTOMATION_ENABLED, SEMANTIC_PLANNER_ENABLED, SEMANTIC_SAFE_EXECUTION_ENABLED,
+    AUTOMATION_CONTEXT_ENABLED, AUTOMATION_DRY_RUN_ENABLED, AUTOMATION_DUPLICATE_PROTECTION_ENABLED,
     CALLER_LOOKUP_PROVIDER,
     PHONE_BRIDGE_TOKEN, CORS_ORIGINS,
 )
@@ -232,6 +236,20 @@ async def lifespan(app: FastAPI):
         str(stt_status.get("ffmpeg_available")).lower(),
         "available" if stt_status.get("available") else stt_status.get("reason"),
     )
+    semantic_status = _semantic_runtime_config()
+    logger.info(
+        "[SEMANTIC] smart=%s planner=%s safe_execution=%s context=%s duplicate=%s dry_run=%s",
+        str(semantic_status["smart_enabled"]).lower(),
+        str(semantic_status["planner_enabled"]).lower(),
+        str(semantic_status["safe_execution_enabled"]).lower(),
+        str(semantic_status["context_enabled"]).lower(),
+        str(semantic_status["duplicate_protection_enabled"]).lower(),
+        str(semantic_status["dry_run_enabled"]).lower(),
+    )
+    if semantic_status["safe_execution_enabled"]:
+        logger.info("[SEMANTIC] safe execution enabled for LOW/MEDIUM actions only")
+    else:
+        logger.info("[SEMANTIC] safe execution disabled; live commands use legacy routing")
     _get_stt_tool(app, force_rebuild=not _stt_provider_cache_enabled())
     _run_startup_stt_warmup(app)
 
@@ -285,8 +303,9 @@ async def lifespan(app: FastAPI):
         logger.info(" - Research Tools: Ready")
         logger.info(" - Fast Intent Router: Ready")
         logger.info(" - Acknowledgements: Ready")
-        logger.info(" - Face Identity: %s", face_identity_service.status())
-        logger.info(" - Step-up Auth: Ready")
+        logger.info(" - Face Gate: %s", _face_runtime_config(face_identity_service))
+        logger.info(" - In-App Face Recognition: %s", "Enabled" if FACE_IN_APP_RECOGNITION_ENABLED else "Disabled")
+        logger.info(" - Step-up Auth: Ready (%s)", "tool face step-up enabled" if FACE_STEP_UP_FOR_TOOLS_ENABLED else "tool face step-up disabled")
         logger.info(" - Interrupt Manager: Ready")
         logger.info(" - Background Task Manager: Ready")
         logger.info(" - Vision (Groq): Ready")
@@ -416,6 +435,14 @@ async def health():
             "interrupt_manager": interrupt_manager is not None,
             "tts": _tts_runtime_config(),
             "stt": _stt_capture_runtime_config(),
+            "semantic": _semantic_runtime_config(),
+            "face_gate": _face_runtime_config(face_identity_service),
+            "face_in_app": {
+                "enabled": bool(FACE_IN_APP_RECOGNITION_ENABLED),
+                "status_enabled": bool(FACE_STATUS_IN_APP_ENABLED),
+                "verify_enabled": bool(FACE_VERIFY_IN_APP_ENABLED),
+                "step_up_for_tools_enabled": bool(FACE_STEP_UP_FOR_TOOLS_ENABLED),
+            },
             "face_identity": face_identity_service.status() if face_identity_service else {"available": False},
             "wake_on_lan": (
                 wake_on_lan_service.status()
@@ -426,6 +453,31 @@ async def health():
     except Exception as e:
         logger.warning("[API /health] Error: %s", e)
         return {"status": "degraded", "error": str(e)}
+
+
+def _semantic_runtime_config() -> dict[str, object]:
+    return {
+        "smart_enabled": bool(SMART_AUTOMATION_ENABLED),
+        "planner_enabled": bool(SEMANTIC_PLANNER_ENABLED),
+        "safe_execution_enabled": bool(SEMANTIC_SAFE_EXECUTION_ENABLED),
+        "context_enabled": bool(AUTOMATION_CONTEXT_ENABLED),
+        "duplicate_protection_enabled": bool(AUTOMATION_DUPLICATE_PROTECTION_ENABLED),
+        "dry_run_enabled": bool(AUTOMATION_DRY_RUN_ENABLED),
+    }
+
+
+def _face_runtime_config(service: FaceIdentityService | None = None) -> dict[str, object]:
+    status = service.status() if service else {"available": False}
+    return {
+        "enabled": bool(FACE_GATE_ENABLED),
+        "scope": FACE_GATE_SCOPE,
+        "available": bool(status.get("available")),
+        "profile_enrolled": bool(status.get("profile_enrolled", False)),
+        "in_app_recognition_enabled": bool(FACE_IN_APP_RECOGNITION_ENABLED),
+        "in_app_status_enabled": bool(FACE_STATUS_IN_APP_ENABLED),
+        "in_app_verify_enabled": bool(FACE_VERIFY_IN_APP_ENABLED),
+        "step_up_for_tools_enabled": bool(FACE_STEP_UP_FOR_TOOLS_ENABLED),
+    }
 
 
 def _format_bytes(value: float | int | None) -> str:
@@ -1324,6 +1376,8 @@ def _stt_capture_runtime_config() -> dict[str, object]:
         "fail_fast_on_warmup_error": _stt_fail_fast_on_warmup_error_enabled(),
         "cache_enabled": _stt_provider_cache_enabled(),
         "domain_correction_enabled": _stt_runtime_bool(section, "STT_DOMAIN_CORRECTION_ENABLED", "parakeet_domain_correction_enabled", bool(STT_DOMAIN_CORRECTION_ENABLED)),
+        "empty_transcript_behavior": str(os.getenv("STT_EMPTY_TRANSCRIPT_BEHAVIOR", "") or section.get("empty_transcript_behavior") or STT_EMPTY_TRANSCRIPT_BEHAVIOR),
+        "empty_transcript_prompt": str(os.getenv("STT_EMPTY_TRANSCRIPT_PROMPT", "") or section.get("empty_transcript_prompt") or STT_EMPTY_TRANSCRIPT_PROMPT),
         "live_call_required": bool(readiness.get("live_call_required", False)),
         "preferred_local_provider": "nemo_parakeet",
         "min_record_seconds": STT_MIN_RECORD_SECONDS,

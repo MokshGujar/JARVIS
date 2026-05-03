@@ -453,6 +453,24 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
             if root.exists():
                 shutil.rmtree(root)
 
+    def test_followup_put_world_in_it_missing_context_asks_file_and_skips_legacy(self):
+        file_tool = _FakeTool("file", lambda context: {"success": True, "action": "append_file", "message": "should not run"})
+
+        result = MainOrchestrator(
+            registry=ToolRegistry([file_tool]),
+            semantic_adapter=SemanticPlannerAdapter(
+                smart_automation_enabled=True,
+                semantic_planner_enabled=True,
+                safe_execution_enabled=True,
+            ),
+            enforce_policy=True,
+        ).execute(ToolContext(command="put World in it", payload={"automation_context": AutomationContext(session_id="s1")}))
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["action"], "semantic_followup_required")
+        self.assertEqual(result["follow_up_question"], "Which file should I use?")
+        self.assertEqual(len(file_tool.calls), 0)
+
     def test_safe_semantic_browser_visible_search_uses_mocked_tools(self):
         app_tool = _FakeTool("app", lambda context: {"success": True, "action": "open", "message": "Opening Chrome."})
         ui_tool = _FakeTool(
@@ -648,13 +666,17 @@ class SemanticPlannerOrchestratorIntegrationTests(unittest.TestCase):
             ):
                 service = AutomationService()
                 created = service.execute("create a file on desktop named service_notes and write hello", session_id="s1")
+                followup = service.execute("put World in it", session_id="s1")
                 context = service._automation_context_store.get("s1")
 
                 self.assertTrue(created["success"])
                 self.assertTrue(created["semantic_execution"])
-                self.assertEqual((desktop / "service_notes.txt").read_text(encoding="utf-8"), "hello")
-                self.assertEqual(context.last_content, "hello")
+                self.assertTrue(followup["success"])
+                self.assertTrue(followup["semantic_execution"])
+                self.assertEqual((desktop / "service_notes.txt").read_text(encoding="utf-8"), "helloWorld")
+                self.assertEqual(context.last_content, "World")
                 self.assertEqual(context.last_created_file_path, str(desktop / "service_notes.txt"))
+                self.assertEqual(context.last_edited_file_path, str(desktop / "service_notes.txt"))
         finally:
             if root.exists():
                 shutil.rmtree(root)

@@ -332,16 +332,19 @@ class SmartAutomationPlanner:
             ]
 
         put_in_it = re.match(r"^put (?P<content>.+?) in it$", cleaned)
-        if put_in_it and context and context.last_created_file_path:
+        if put_in_it:
+            original_put = re.match(r"^put (?P<content>.+?) in it$", original.strip(), flags=re.I)
+            path = context.last_created_file_path if context and context.last_created_file_path else None
             return [
                 self._action(
-                    SemanticAutomationIntent.WRITE_FILE,
+                    SemanticAutomationIntent.APPEND_FILE,
                     AutomationDomain.FILE,
                     AutomationMode.DIRECT_TOOL,
-                    file_path=context.last_created_file_path,
-                    content=self._strip_filler(put_in_it.group("content")),
+                    file_path=path,
+                    content=self._strip_filler((original_put or put_in_it).group("content")),
                     preferred_tool="file",
                     requires_context=True,
+                    missing_fields=[] if path else ["file"],
                 )
             ]
 
@@ -661,7 +664,7 @@ class SmartAutomationPlanner:
             "search_query": "What should I search?",
             "recipient": "Who should I send it to?",
             "message_draft": "Should I send it now?",
-            "file": "Which file do you mean?",
+            "file": "Which file should I use?",
             "reference": "What should I replace?",
             "browser_context": "Which browser should I use?",
             "undo_context": "What should I undo?",

@@ -511,6 +511,27 @@ class AutomationService:
             lowered,
         ))
 
+    def looks_like_semantic_request(self, command: str, *, session_id: str | None = None) -> bool:
+        context = self._automation_context_for(session_id)
+        probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
+        adapter = probe_orchestrator.semantic_adapter
+        if not adapter.enabled or not adapter.safe_execution_enabled:
+            logger.info("[SEMANTIC] fallback=legacy reason=no_semantic_claim")
+            return False
+        result = adapter.peek_live_claim(command, context=context)
+        if result is None:
+            logger.info("[SEMANTIC] fallback=legacy reason=no_semantic_claim")
+            return False
+        actions = list(getattr(result, "semantic_actions", []) or [])
+        intent = actions[0].intent.value if actions else "unknown"
+        missing_fields = list(getattr(result, "missing_fields", []) or [])
+        context_label = self._semantic_context_label(actions[0] if actions else None, context)
+        if missing_fields:
+            logger.info("[SEMANTIC] blocked reason=missing_context")
+        else:
+            logger.info("[SEMANTIC] claimed=true intent=%s context=%s", intent, context_label)
+        return True
+
     def execute(self, command: str, *, session_id: str | None = None) -> Dict[str, object]:
         if session_id:
             self._load_session_pending_state(session_id)
@@ -1177,6 +1198,20 @@ class AutomationService:
             if isinstance(pending, dict):
                 self._pending_dry_run_plan = pending
         return result
+
+    @staticmethod
+    def _semantic_context_label(action, context: AutomationContext | None) -> str:
+        if action is None:
+            return "none"
+        if getattr(action, "file_path", None) and context and getattr(action, "file_path") == context.last_created_file_path:
+            return "last_created_file_path"
+        if getattr(action, "file_path", None) and context and getattr(action, "file_path") == context.last_edited_file_path:
+            return "last_edited_file_path"
+        if getattr(action, "file_path", None):
+            return "file_path"
+        if getattr(action, "requires_context", False):
+            return "missing" if getattr(action, "missing_fields", None) else "context"
+        return "none"
 
     def _execute_file_tool(self, command: str) -> Dict[str, str | bool] | None:
         return self._execute_tool_with_orchestrator(command, expected_tool="file")

@@ -140,8 +140,12 @@ let voiceSendInFlight = false;
 let voiceIdentityStatus = null;
 let speechSupportReason = '';
 let faceAuthStatus = null;
-let faceSessionId = localStorage.getItem('jarvis_face_session_id') || '';
+let entryGateSessionId = localStorage.getItem('jarvis_entry_gate_session_id') || '';
+let faceStatusInAppEnabled = false;
+let faceVerifyInAppEnabled = false;
 let pendingStepUpToken = '';
+let sttEmptyTranscriptBehavior = 'short_prompt';
+let sttEmptyTranscriptPrompt = "I didn't catch that.";
 
 /*
  * orb — Reference to the OrbRenderer instance (the animated WebGL orb).
@@ -226,6 +230,11 @@ async function fetchRuntimeVoiceConfig() {
         sttEndSilenceSeconds = Math.max(0.7, Number(stt.end_silence_seconds || sttEndSilenceSeconds));
         sttMaxRecordSeconds = Math.max(sttMinRecordSeconds, Number(stt.max_record_seconds || sttMaxRecordSeconds));
         sttSpeechPaddingMs = Math.max(0, Number(stt.speech_padding_ms || sttSpeechPaddingMs));
+        sttEmptyTranscriptBehavior = String(stt.empty_transcript_behavior || sttEmptyTranscriptBehavior || 'short_prompt').toLowerCase();
+        sttEmptyTranscriptPrompt = String(stt.empty_transcript_prompt || sttEmptyTranscriptPrompt || "I didn't catch that.");
+        const faceInApp = d && d.face_in_app ? d.face_in_app : {};
+        faceStatusInAppEnabled = faceInApp.status_enabled === true;
+        faceVerifyInAppEnabled = faceInApp.verify_enabled === true;
         const thinkingAudio = d && d.tts && d.tts.thinking_audio ? d.tts.thinking_audio : {};
         thinkingAudioFinishBeforeFinalTts = thinkingAudio.finish_before_final_tts !== false;
         thinkingAudioStopOnFinalTts = thinkingAudio.stop_on_final_tts === true;
@@ -323,13 +332,19 @@ async function captureFaceFrames(count = 5, intervalMs = 150) {
 
 function updateFaceAuthStatus() {
     if (!faceAuthStatusEl) return;
+    if (entryGateSessionId) {
+        faceAuthStatusEl.textContent = 'Entry gate verified for this app session.';
+        return;
+    }
     const enrolled = !!faceAuthStatus?.profile_enrolled;
-    faceAuthStatusEl.textContent = enrolled
-        ? `Face profile active (${faceAuthStatus.accepted_samples || 0}/${faceAuthStatus.required_samples || 0}).`
-        : 'No active face profile enrolled.';
+    faceAuthStatusEl.textContent = enrolled ? 'Entry gate profile is ready.' : 'Entry gate verification happens in the launcher.';
 }
 
 async function refreshFaceAuthStatus() {
+    if (!faceStatusInAppEnabled) {
+        updateFaceAuthStatus();
+        return faceAuthStatus;
+    }
     const res = await fetch(`${API}/face/status`);
     faceAuthStatus = await res.json();
     updateFaceAuthStatus();
@@ -349,17 +364,17 @@ async function consumeLauncherBootstrapToken() {
         });
         const payload = await res.json().catch(() => ({}));
         if (res.ok && payload.exchanged && payload.face_session_id) {
-            faceSessionId = payload.face_session_id;
-            localStorage.setItem('jarvis_face_session_id', faceSessionId);
-            showToast('Face session restored.');
+            entryGateSessionId = payload.face_session_id;
+            localStorage.setItem('jarvis_entry_gate_session_id', entryGateSessionId);
+            showToast('Entry gate verified.');
         } else {
-            faceSessionId = '';
-            localStorage.removeItem('jarvis_face_session_id');
+            entryGateSessionId = '';
+            localStorage.removeItem('jarvis_entry_gate_session_id');
             showToast(payload.reason || 'Launcher authentication expired.');
         }
     } catch (_) {
-        faceSessionId = '';
-        localStorage.removeItem('jarvis_face_session_id');
+        entryGateSessionId = '';
+        localStorage.removeItem('jarvis_entry_gate_session_id');
         showToast('Launcher authentication unavailable.');
     } finally {
         url.searchParams.delete('bootstrap_token');
@@ -369,20 +384,11 @@ async function consumeLauncherBootstrapToken() {
 }
 
 async function verifyFaceNow() {
-    const frames = await captureFaceFrames();
-    const res = await fetch(`${API}/face/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frames, client_id: 'web' }),
-    });
-    const payload = await res.json();
-    if (!res.ok || payload.status !== 'verified') {
-        throw new Error(payload.reason || payload.detail || 'Face verification failed.');
+    if (!faceVerifyInAppEnabled) {
+        window.location.assign('/launcher/');
+        return { status: 'launcher_required' };
     }
-    faceSessionId = payload.face_session_id || '';
-    if (faceSessionId) localStorage.setItem('jarvis_face_session_id', faceSessionId);
-    showToast('Face verified.');
-    return payload;
+    throw new Error('In-app face verification is disabled.');
 }
 
 async function enrollFaceProfile() {
@@ -417,82 +423,21 @@ async function clearFaceProfile() {
     const res = await fetch(`${API}/face/profile`, { method: 'DELETE' });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.detail || 'Could not delete face profile.');
-    faceSessionId = '';
+    entryGateSessionId = '';
     pendingStepUpToken = '';
-    localStorage.removeItem('jarvis_face_session_id');
+    localStorage.removeItem('jarvis_entry_gate_session_id');
     await refreshFaceAuthStatus();
     showToast('Face profile deleted.');
 }
 
 async function performStepUpForRisk(authPayload, expectedRequestId = null) {
-    const risk = authPayload?.risk || {};
-    const commandText = risk.command_text || '';
-    const commandAction = risk.command_action || '';
-    activeStepUpRequestId = expectedRequestId || buildClientRequestId();
-    if (!faceSessionId) await verifyFaceNow();
-    if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-        throw new Error('step_up_cancelled');
-    }
-    const startStepUp = () => fetch(`${API}/auth/step-up/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ face_session_id: faceSessionId, command_text: commandText, command_action: commandAction }),
-    }).then(r => r.json());
-
-    let start = await startStepUp();
-    if (!start.started && /face_session/i.test(start.reason || '')) {
-        faceSessionId = '';
-        localStorage.removeItem('jarvis_face_session_id');
-        await verifyFaceNow();
-        if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-            throw new Error('step_up_cancelled');
-        }
-        start = await startStepUp();
-    }
-    if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-        throw new Error('step_up_cancelled');
-    }
-    if (!start.started) throw new Error(start.reason || 'Step-up verification could not start.');
-    const frames = await captureFaceFrames();
-    if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-        throw new Error('step_up_cancelled');
-    }
-    const verified = await fetch(`${API}/auth/step-up/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            challenge_id: start.challenge_id,
-            face_session_id: faceSessionId,
-            command_text: commandText,
-            command_action: commandAction,
-            frames,
-            client_id: 'web',
-        }),
-    }).then(r => r.json());
-    if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-        throw new Error('step_up_cancelled');
-    }
-    if (!verified.token_issued || !verified.step_up_token) {
-        throw new Error(verified.reason || 'Fresh live face verification failed.');
-    }
-    pendingStepUpToken = verified.step_up_token;
     activeStepUpRequestId = null;
-    return verified;
+    throw new Error('Face step-up is disabled inside the app.');
 }
 
 async function performFaceAuthorization(authPayload, expectedRequestId = null) {
-    if (authPayload?.step_up_required) {
-        return performStepUpForRisk(authPayload, expectedRequestId);
-    }
-    activeStepUpRequestId = expectedRequestId || buildClientRequestId();
-    faceSessionId = '';
-    localStorage.removeItem('jarvis_face_session_id');
-    const verified = await verifyFaceNow();
-    if (expectedRequestId && activeStepUpRequestId !== expectedRequestId) {
-        throw new Error('step_up_cancelled');
-    }
     activeStepUpRequestId = null;
-    return verified;
+    throw new Error('Face verification is launcher-only.');
 }
 
 function cosineSimilarity(a, b) {
@@ -942,6 +887,16 @@ async function transcribeCapturedVoiceAudio(voiceAudioBase64) {
     return payload;
 }
 
+function handleEmptyTranscript() {
+    cancelThinkingSound();
+    setJarvisVisualState(isListening ? 'listening' : 'idle');
+    if (sttEmptyTranscriptBehavior !== 'silent') {
+        const prompt = sttEmptyTranscriptPrompt || "I didn't catch that.";
+        showToast(prompt);
+        if (speechWidgetText) speechWidgetText.textContent = prompt;
+    }
+}
+
 async function sendCapturedVoiceCommand() {
     if (finishingVoiceCommandCapture || voiceSendInFlight) return false;
     finishingVoiceCommandCapture = true;
@@ -954,7 +909,7 @@ async function sendCapturedVoiceCommand() {
         const payload = await transcribeCapturedVoiceAudio(voiceAudioBase64);
         const transcript = String(payload?.text || '').trim();
         if (!transcript) {
-            showToast('No speech was detected.');
+            handleEmptyTranscript();
             return false;
         }
         if (speechWidgetText) speechWidgetText.textContent = transcript;
@@ -968,6 +923,10 @@ async function sendCapturedVoiceCommand() {
         return true;
     } catch (error) {
         voiceSendInFlight = false;
+        if ((error?.message || error) === 'empty_transcript') {
+            handleEmptyTranscript();
+            return false;
+        }
         showToast(`Voice transcription failed: ${error?.message || error}`);
         throw error;
     } finally {
@@ -4062,7 +4021,6 @@ async function sendMessage(textOverride, options = {}) {
 
     let firstChunkReceived = false;
     let timeoutId = null;
-    let retryAfterFaceAuth = false;
     const controller = new AbortController();
     activeStreamController = controller;
     activeClientRequestId = clientRequestId;
@@ -4078,8 +4036,6 @@ async function sendMessage(textOverride, options = {}) {
                 tts: false,
                 input_source: options.inputSource || 'text',
                 voice_audio_base64: options.voiceAudioBase64 || null,
-                face_session_id: faceSessionId || null,
-                step_up_token: pendingStepUpToken || null,
                 client_request_id: clientRequestId,
             }),
             signal: controller.signal,
@@ -4166,16 +4122,7 @@ async function sendMessage(textOverride, options = {}) {
                             stopBrowserSpeech();
                             if (browserStreamSpeaker) browserStreamSpeaker.reset();
                             if (ttsPlayer) ttsPlayer.stop();
-                            try {
-                                showToast('Verifying face to run that command.');
-                                await performFaceAuthorization(data.actions.auth, clientRequestId);
-                                retryAfterFaceAuth = true;
-                                showToast('Face verified. Running command now.');
-                            } catch (err) {
-                                if ((err.message || '') !== 'step_up_cancelled') {
-                                    showToast(err.message || 'Face verification failed.');
-                                }
-                            }
+                            showToast('That action needs permission before it can run.');
                             try { controller.abort(); } catch (_) {}
                             streamDone = true;
                             break;
@@ -4238,14 +4185,6 @@ async function sendMessage(textOverride, options = {}) {
         if (browserStreamSpeaker) browserStreamSpeaker.finish();
 
         if (cursorEl) cursorEl.remove();
-        if (retryAfterFaceAuth && pendingStepUpToken) {
-            contentEl.closest('.message')?.remove();
-            return;
-        }
-        if (retryAfterFaceAuth && faceSessionId) {
-            contentEl.closest('.message')?.remove();
-            return;
-        }
         // If the server sent nothing, show a placeholder
         const textSpan = contentEl.querySelector('.msg-stream-text');
         if (textSpan && !fullResponse) textSpan.textContent = '(No response)';
@@ -4255,9 +4194,6 @@ async function sendMessage(textOverride, options = {}) {
         if (browserStreamSpeaker) browserStreamSpeaker.reset();
         removeTypingIndicator();
         cancelThinkingSound();
-        if (retryAfterFaceAuth && (pendingStepUpToken || faceSessionId)) {
-            return;
-        }
         if (err.name === 'AbortError' && interruptingForBargeIn) {
             return;
         }
@@ -4275,9 +4211,6 @@ async function sendMessage(textOverride, options = {}) {
         interruptingForBargeIn = false;
         if (orbContainer) orbContainer.classList.remove('active');
         if (!isJarvisSpeakingOrStreaming() && !isListening) setJarvisVisualState('idle');
-        if (retryAfterFaceAuth && (pendingStepUpToken || faceSessionId)) {
-            setTimeout(() => sendMessage(text, { inputSource: options.inputSource || 'text' }), 100);
-        }
         maybeRestartListening();   // Auto-restart mic when stream ends (TTS may still be playing)
     }
 }

@@ -65,6 +65,13 @@ class AutomationReliabilityTests(unittest.TestCase):
 
         self.assertFalse(risk.step_up_required)
 
+    def test_automation_semantic_probe_preserves_legacy_when_safe_execution_disabled(self):
+        from app.orchestrator import semantic_planner_adapter as adapter_module
+
+        service = AutomationService()
+        with patch.object(adapter_module, "SEMANTIC_SAFE_EXECUTION_ENABLED", False):
+            self.assertFalse(service.looks_like_semantic_request("put World in it", session_id="s1"))
+
     def test_open_chrome_followup_reuses_pending_browser_context(self):
         service = AutomationService()
         first = service._finalize_open_result("chrome", {"success": True, "action": "open", "message": "Opening Chrome."})

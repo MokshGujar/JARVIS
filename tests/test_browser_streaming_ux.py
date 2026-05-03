@@ -79,7 +79,7 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         self.assertIn("this.audio.onended = null", script)
         self.assertIn("this.audio.onerror = null", script)
 
-    def test_actions_execute_immediately_and_step_up_is_not_bypassed(self):
+    def test_actions_execute_immediately_without_in_app_face_step_up(self):
         with open("frontend/script.js", encoding="utf-8") as handle:
             script = handle.read()
 
@@ -87,24 +87,22 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         self.assertIn("addImageResultMessage('Image ready.'", script)
         self.assertIn("addContentResultMessage('Content ready.'", script)
         self.assertIn("window.open(url, '_blank', 'noopener')", script)
-        self.assertIn("data.actions.auth.step_up_required || data.actions.auth.face_verification_required", script)
-        self.assertIn("data.actions.auth.face_verification_required", script)
-        self.assertIn("await performFaceAuthorization(data.actions.auth, clientRequestId);", script)
+        self.assertIn("That action needs permission before it can run.", script)
+        self.assertNotIn("await performFaceAuthorization(data.actions.auth, clientRequestId);", script)
+        self.assertNotIn("/face/verify", script)
+        self.assertNotIn("/auth/step-up/start", script)
+        self.assertNotIn("face_session_id:", script)
         self.assertIn("try { controller.abort(); } catch (_) {}", script)
-        self.assertIn("retryAfterFaceAuth && (pendingStepUpToken || faceSessionId)", script)
-        self.assertIn("setTimeout(() => sendMessage(text, { inputSource: options.inputSource || 'text' }), 100);", script)
         self.assertIn("invalidateActiveStepUp()", script)
 
-    def test_step_up_refreshes_expired_face_session_before_retrying(self):
+    def test_launcher_bootstrap_is_entry_gate_only(self):
         with open("frontend/script.js", encoding="utf-8") as handle:
             script = handle.read()
 
-        self.assertIn("async function performStepUpForRisk(authPayload, expectedRequestId = null)", script)
-        self.assertIn("let start = await startStepUp();", script)
-        self.assertIn("if (!start.started && /face_session/i.test(start.reason || ''))", script)
-        self.assertIn("localStorage.removeItem('jarvis_face_session_id');", script)
-        self.assertIn("start = await startStepUp();", script)
-        self.assertIn("async function performFaceAuthorization(authPayload, expectedRequestId = null)", script)
+        self.assertIn("/auth/launcher/exchange-bootstrap", script)
+        self.assertIn("jarvis_entry_gate_session_id", script)
+        self.assertIn("entryGateSessionId = payload.face_session_id;", script)
+        self.assertNotIn("jarvis_face_session_id", script)
 
     def test_canonical_action_list_contract_is_handled(self):
         with open("frontend/script.js", encoding="utf-8") as handle:
@@ -142,6 +140,16 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
         self.assertIn("const payload = await transcribeCapturedVoiceAudio(voiceAudioBase64);", script)
         self.assertIn("Promise.resolve(sendMessage(transcript, {", script)
         self.assertIn("if (isBackendSttCaptureMode()) {", script)
+
+    def test_empty_backend_stt_transcript_does_not_send_chat_or_thinking_audio(self):
+        with open("frontend/script.js", encoding="utf-8") as handle:
+            script = handle.read()
+
+        self.assertIn("function handleEmptyTranscript()", script)
+        self.assertIn("cancelThinkingSound();", script)
+        self.assertIn("if ((error?.message || error) === 'empty_transcript')", script)
+        self.assertIn("handleEmptyTranscript();", script)
+        self.assertIn("return false;", script)
 
 
 if __name__ == "__main__":

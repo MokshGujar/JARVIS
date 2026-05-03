@@ -20,8 +20,13 @@ class AutomationCapability:
             or self.automation_service.has_pending_whatsapp_clarification()
         )
 
-    def looks_like_request(self, message: str) -> bool:
-        return bool(self.automation_service and self.automation_service.looks_like_automation_request(message))
+    def looks_like_request(self, message: str, *, session_id: str | None = None) -> bool:
+        if not self.automation_service:
+            return False
+        if self.automation_service.looks_like_automation_request(message):
+            return True
+        semantic_probe = getattr(self.automation_service, "looks_like_semantic_request", None)
+        return bool(semantic_probe and semantic_probe(message, session_id=session_id))
 
     def execute(self, context: AssistantContext) -> CapabilityResult:
         result = normalize_automation_response(self.automation_service.execute(context.message, session_id=context.session_id))

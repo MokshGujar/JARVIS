@@ -139,7 +139,7 @@ class SemanticActionMapper:
 
         if intent == SemanticAutomationIntent.WRITE_FILE:
             if not action.file_path:
-                return _missing("file", "Which file do you mean?")
+                return _missing("file", "Which file should I use?")
             if action.content is None:
                 return _missing("content", "What should I write?")
             path = self._created_path_for(action.file_path, current_steps) or action.file_path
@@ -158,7 +158,7 @@ class SemanticActionMapper:
 
         if intent == SemanticAutomationIntent.APPEND_FILE:
             if not action.file_path:
-                return _missing("file", "Which file do you mean?")
+                return _missing("file", "Which file should I use?")
             if action.content is None:
                 return _missing("content", "What should I write?")
             return [self._step(current_steps, "file", "file", "append_file", {"path": action.file_path, "content": action.content})]

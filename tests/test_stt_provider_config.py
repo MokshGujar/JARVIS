@@ -24,9 +24,11 @@ class STTProviderConfigTests(unittest.TestCase):
         self.assertTrue(section["parakeet_require_wav"])
         self.assertTrue(section["parakeet_post_processing_enabled"])
         self.assertTrue(section["parakeet_domain_correction_enabled"])
-        self.assertEqual(section["parakeet_domain_corrections"], "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis")
+        self.assertEqual(section["parakeet_domain_corrections"], "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis")
         self.assertFalse(section["parakeet_domain_correction_case_sensitive"])
         self.assertTrue(section["parakeet_domain_correction_word_boundary"])
+        self.assertEqual(section["empty_transcript_behavior"], "short_prompt")
+        self.assertEqual(section["empty_transcript_prompt"], "I didn't catch that.")
         self.assertTrue(section["provider_cache_enabled"])
         self.assertTrue(section["parakeet_preload_on_startup"])
         self.assertTrue(section["warmup_on_startup"])
@@ -37,6 +39,7 @@ class STTProviderConfigTests(unittest.TestCase):
 
         self.assertTrue(section["smart_automation_enabled"])
         self.assertFalse(section["semantic_planner_enabled"])
+        self.assertFalse(section["semantic_safe_execution_enabled"])
         self.assertTrue(section["automation_context_enabled"])
         self.assertEqual(section["automation_context_ttl_seconds"], 900)
         self.assertTrue(section["automation_context_redact_sensitive"])
@@ -45,6 +48,16 @@ class STTProviderConfigTests(unittest.TestCase):
         self.assertEqual(section["automation_duplicate_window_seconds"], 5)
         self.assertTrue(section["app_interaction"]["enabled"])
         self.assertTrue(section["app_interaction"]["semantic_actions_enabled"])
+
+    def test_config_loader_exposes_launcher_only_face_gate_defaults(self):
+        section = ConfigLoader().get_section("security")
+
+        self.assertTrue(section["face_gate_enabled"])
+        self.assertEqual(section["face_gate_scope"], "launcher_only")
+        self.assertFalse(section["face_in_app_recognition_enabled"])
+        self.assertFalse(section["face_step_up_for_tools_enabled"])
+        self.assertFalse(section["face_status_in_app_enabled"])
+        self.assertFalse(section["face_verify_in_app_enabled"])
 
     def test_backend_capture_defaults_to_nemo_parakeet_when_provider_unset(self):
         readiness = stt_provider_readiness(

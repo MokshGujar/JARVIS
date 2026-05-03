@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
     from app.orchestrator.automation_context import AutomationContext
     from app.orchestrator.smart_automation_planner import SmartAutomationPlanner
     from app.orchestrator.semantic_automation import SemanticAutomationAction
+
+logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class DryRunRequest:
@@ -69,6 +72,14 @@ class SemanticPlannerAdapter:
     def try_plan_action(self, text: str, context: AutomationContext | None = None) -> ActionPlan | None:
         return None
 
+    def peek_live_claim(self, text: str, context: AutomationContext | None = None) -> Any | None:
+        if is_explicit_dry_run_request(text) or not self.enabled or not self.safe_execution_enabled:
+            return None
+        planner = self._get_planner()
+        result = planner.plan(text, context=context, dry_run=False)
+        actions = list(getattr(result, "semantic_actions", []) or [])
+        return result if actions else None
+
     def try_live_result(self, text: str, context: AutomationContext | None = None, scenario_policy: Any | None = None) -> ActionPlan | dict[str, Any] | None:
         if is_explicit_dry_run_request(text) or not self.enabled or not self.safe_execution_enabled:
             return None
@@ -78,10 +89,12 @@ class SemanticPlannerAdapter:
         self.last_semantic_result = result
         actions = list(getattr(result, "semantic_actions", []) or [])
         if not actions:
+            logger.info("[SEMANTIC] fallback=legacy reason=no_semantic_claim")
             return None
 
         missing_fields = list(getattr(result, "missing_fields", []) or [])
         if missing_fields:
+            logger.info("[SEMANTIC] blocked reason=missing_context")
             return self._missing_fields_response(result)
 
         duplicate_response, fingerprints = self._duplicate_response(actions, result, context)
@@ -97,7 +110,13 @@ class SemanticPlannerAdapter:
             fingerprints=fingerprints,
         )
         if mapped.response is not None:
+            reason = "unsupported"
+            if str(mapped.response.get("action") or "") == "semantic_action_blocked":
+                reason = "risky"
+            logger.info("[SEMANTIC] blocked reason=%s", reason)
             return mapped.response
+        context_label = _context_label(actions[0], context)
+        logger.info("[SEMANTIC] claimed=true intent=%s context=%s", actions[0].intent.value, context_label)
         return mapped.plan
 
     def try_dry_run_response(self, text: str, context: AutomationContext | None = None) -> dict[str, Any] | None:
@@ -262,7 +281,7 @@ class SemanticPlannerAdapter:
         field = missing_fields[0]
         return {
             "message_draft": "I need to know which message you mean first.",
-            "file": "I need to know which file you mean first.",
+            "file": "Which file should I use?",
             "content": "I need to know what content you mean first.",
             "search_query": "I need to know what to search first.",
             "reference": "I need to know what you want to replace first.",
@@ -389,6 +408,18 @@ def _location_suffix(value: Any) -> str:
 
 def _has_intent(actions: list[SemanticAutomationAction], intent: Any) -> bool:
     return any(action.intent == intent for action in actions)
+
+
+def _context_label(action: SemanticAutomationAction, context: AutomationContext | None) -> str:
+    if action.file_path and context and action.file_path == context.last_created_file_path:
+        return "last_created_file_path"
+    if action.file_path and context and action.file_path == context.last_edited_file_path:
+        return "last_edited_file_path"
+    if action.file_path:
+        return "file_path"
+    if action.requires_context:
+        return "missing" if action.missing_fields else "context"
+    return "none"
 
 
 def _fallback_step_label(action: str, args: dict[str, Any]) -> str:

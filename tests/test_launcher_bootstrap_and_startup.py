@@ -203,7 +203,7 @@ class FrontendSourceTests(unittest.TestCase):
             script = handle.read()
 
         self.assertIn("/auth/launcher/exchange-bootstrap", script)
-        self.assertIn("localStorage.setItem('jarvis_face_session_id'", script)
+        self.assertIn("localStorage.setItem('jarvis_entry_gate_session_id'", script)
         self.assertIn("url.searchParams.delete('bootstrap_token')", script)
         self.assertIn("window.history.replaceState", script)
         self.assertNotIn("face_session_id=", script)

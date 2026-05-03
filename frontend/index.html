@@ -214,8 +214,8 @@
 
                 <div class="permission-banner hud-frame">
                     <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg>
-                    <span>Permission-required tasks are verified automatically with face recognition on this device</span>
-                    <strong>FACE AUTH: ACTIVE</strong>
+                    <span>Entry gate verification is handled by the launcher before this app opens</span>
+                    <strong>ENTRY GATE: VERIFIED</strong>
                 </div>
             </section>
         </main>
@@ -232,7 +232,7 @@
             <section class="side-panel hud-frame panel-frame">
                 <div class="panel-header"><span>Active Modules</span><i></i></div>
                 <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>Voice Recognition</span><b class="success">Active</b></div>
-                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>Face Recognition</span><b class="success">Active</b></div>
+                <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg>Entry Gate</span><b class="success">Verified</b></div>
                 <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 3 5-7"/></svg>System Monitor</span><b class="success">Active</b></div>
                 <div class="panel-row"><span><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>File Assistant</span><b class="success">Active</b></div>
                 <div class="panel-row"><span><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Web Search</span><b class="success">Active</b></div>
@@ -251,15 +251,15 @@
             </section>
 
             <section class="side-panel security-panel hud-frame panel-frame">
-                <div class="panel-header"><span>Security &amp; Authentication</span><i></i></div>
+                <div class="panel-header"><span>Entry Gate</span><i></i></div>
                 <div class="security-body">
-                    <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></svg>
                     <div>
-                        <strong>Face Recognition: Active</strong>
-                        <p>Permission-required tasks are verified automatically</p>
+                        <strong>Entry Gate: Verified</strong>
+                        <p>Launcher authentication completed before app entry</p>
                     </div>
                 </div>
-                <button class="security-action" type="button">Manage Security</button>
+                <button class="security-action" type="button" data-msg="Show system status">System Status</button>
             </section>
         </aside>
 
@@ -310,13 +310,11 @@
                 <div class="settings-item"><label class="settings-label" for="toggle-auto-search">Auto-open search results</label><label class="toggle-switch"><input type="checkbox" id="toggle-auto-search" checked><span class="toggle-slider"></span></label></div>
                 <div class="settings-item"><label class="settings-label" for="toggle-thinking-sounds">Thinking sound effects</label><label class="toggle-switch"><input type="checkbox" id="toggle-thinking-sounds" checked><span class="toggle-slider"></span></label></div>
                 <div class="settings-item settings-item-stack">
-                    <label class="settings-label">Face authentication</label>
-                    <p class="settings-hint inline" id="face-auth-status">No face profile enrolled.</p>
-                    <button class="settings-action-btn" id="verify-face-btn" type="button">Verify face</button>
-                    <button class="settings-action-btn" id="enroll-face-btn" type="button">Enroll face</button>
-                    <button class="settings-action-btn secondary" id="clear-face-profile-btn" type="button">Clear face profile</button>
+                    <label class="settings-label">Entry gate</label>
+                    <p class="settings-hint inline" id="face-auth-status">Entry gate verification happens in the launcher.</p>
+                    <button class="settings-action-btn" type="button" onclick="window.location.assign('/launcher/')">Open launcher</button>
                 </div>
-                <p class="settings-hint">Activity, search, speech, vision, and face verification keep their existing backend routes.</p>
+                <p class="settings-hint">Activity, search, speech, and vision use the app session after launcher entry.</p>
             </div>
         </div>
 

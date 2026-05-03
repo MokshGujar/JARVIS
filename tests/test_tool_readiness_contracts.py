@@ -97,6 +97,15 @@ class ToolReadinessContractTests(unittest.TestCase):
         self.assertFalse(critical.requires_face_step_up)
         self.assertTrue(critical.requires_voice_permission)
 
+    def test_tool_policy_does_not_require_face_step_up_by_default(self):
+        policy = ScenarioPolicy()
+
+        delete_file = policy.evaluate(RouteDecision("file.delete_file", "file", "file", "file", "delete_file"))
+        send_message = policy.evaluate(RouteDecision("message.send", "message", "message", "communication", "send_message"))
+
+        self.assertFalse(delete_file.requires_face_step_up)
+        self.assertFalse(send_message.requires_face_step_up)
+
     def test_inventory_policy_uses_action_level_safety_before_tool_default(self):
         policy = ScenarioPolicy()
 

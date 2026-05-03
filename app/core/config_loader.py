@@ -12,14 +12,15 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
-    "automation": {
-        "enabled": True,
-        "task_timeout_seconds": 120,
-        "smart_automation_enabled": True,
-        "semantic_planner_enabled": False,
-        "automation_context_enabled": True,
-        "automation_context_ttl_seconds": 900,
-        "automation_context_redact_sensitive": True,
+        "automation": {
+            "enabled": True,
+            "task_timeout_seconds": 120,
+            "smart_automation_enabled": True,
+            "semantic_planner_enabled": False,
+            "semantic_safe_execution_enabled": False,
+            "automation_context_enabled": True,
+            "automation_context_ttl_seconds": 900,
+            "automation_context_redact_sensitive": True,
         "automation_dry_run_enabled": True,
         "automation_duplicate_protection_enabled": True,
         "automation_duplicate_window_seconds": 5,
@@ -35,11 +36,17 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "debug": False,
         },
     },
-    "security": {
-        "step_up_token_ttl_seconds": 30,
-        "confirm_medium_risk": True,
-        "confirm_high_risk": True,
-    },
+        "security": {
+            "step_up_token_ttl_seconds": 30,
+            "confirm_medium_risk": True,
+            "confirm_high_risk": True,
+            "face_gate_enabled": True,
+            "face_gate_scope": "launcher_only",
+            "face_in_app_recognition_enabled": False,
+            "face_step_up_for_tools_enabled": False,
+            "face_status_in_app_enabled": False,
+            "face_verify_in_app_enabled": False,
+        },
     "whatsapp": {
         "desktop_timeout_seconds": 8,
         "web_timeout_seconds": 20,
@@ -57,7 +64,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "provider": "none",
         "max_input_chars": 32000,
     },
-    "stt": {
+        "stt": {
         "provider": "nemo_parakeet",
         "preferred_local_provider": "nemo_parakeet",
         "parakeet_model": "nvidia/parakeet-tdt-0.6b-v2",
@@ -69,10 +76,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "parakeet_require_wav": True,
         "parakeet_post_processing_enabled": True,
         "parakeet_domain_correction_enabled": True,
-        "parakeet_domain_corrections": "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis",
-        "parakeet_domain_correction_case_sensitive": False,
-        "parakeet_domain_correction_word_boundary": True,
-        "provider_cache_enabled": True,
+            "parakeet_domain_corrections": "Jarris=Jarvis|Javi=Jarvis|Jaris=Jarvis|Javas=Jarvis|Jervis=Jarvis|Javier=Jarvis|Jawis=Jarvis|Jais=Jarvis|Jarwis=Jarvis|Jarvish=Jarvis",
+            "parakeet_domain_correction_case_sensitive": False,
+            "parakeet_domain_correction_word_boundary": True,
+            "empty_transcript_behavior": "short_prompt",
+            "empty_transcript_prompt": "I didn't catch that.",
+            "provider_cache_enabled": True,
         "parakeet_preload_on_startup": True,
         "warmup_on_startup": True,
         "fail_fast_on_warmup_error": False,
