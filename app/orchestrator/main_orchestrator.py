@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.intent_router import IntentRouter, RouteDecision
 from app.orchestrator.scenario_policy import PolicyDecision, ScenarioPolicy
 from app.orchestrator.semantic_planner_adapter import SemanticPlannerAdapter
@@ -82,8 +83,7 @@ class MainOrchestrator:
         if route is None:
             return None
 
-        tool = self.registry.by_name(route.tool_name) if self.registry.contains(route.tool_name) else self.registry.by_intent(route.intent)
-        if tool is None:
+        if not self.registry.contains(route.tool_name) and self.registry.by_intent(route.intent) is None:
             return {
                 "success": False,
                 "action": "tool_not_found",
@@ -91,36 +91,28 @@ class MainOrchestrator:
                 "route": route,
             }
 
-        policy = self.scenario_policy.evaluate(route)
-        if self.enforce_policy:
-            blocked = self._policy_block(context, route, policy)
-            if blocked is not None:
-                return blocked
-
-        tool_context = ToolContext(
-            command=context.command,
-            intent=route.intent,
-            session_id=context.session_id,
-            face_session_id=context.face_session_id,
-            step_up_token=context.step_up_token,
-            payload={**context.payload, "route": route, "policy": policy},
-            source=context.source,
-            user_id=context.user_id,
-            security_state=dict(context.security_state),
-            confirmation_state=dict(context.confirmation_state),
-            request_id=context.request_id,
-            metadata=dict(context.metadata),
+        plan = ActionPlan(
+            original_text=context.command,
+            steps=[
+                ActionStep(
+                    step_id="step1",
+                    tool_name=route.tool_name,
+                    intent=route.intent,
+                    action=route.operation,
+                    args=dict(route.parameters),
+                )
+            ],
+            is_multistep=False,
         )
-        result = normalize_tool_result(tool.execute(tool_context), default_action=route.intent)
-        result["selected_tool"] = route.tool_name
-        result["scenario"] = route.scenario
-        result["policy"] = {
-            "safety_level": policy.safety_level,
-            "requires_confirmation": policy.requires_confirmation,
-            "requires_face_step_up": policy.requires_face_step_up,
-            "requires_voice_permission": policy.requires_voice_permission,
-            "reasons": list(policy.reasons),
-        }
+        executor = self.tool_executor or ToolExecutor(
+            registry=self.registry,
+            scenario_policy=self.scenario_policy,
+            enforce_policy=self.enforce_policy,
+        )
+        result = executor.execute(plan, context)
+        if isinstance(result, dict):
+            result.setdefault("selected_tool", route.tool_name)
+            result.setdefault("scenario", route.scenario)
         return result
 
     def execute_text(self, user_text: str, **context_kwargs: Any) -> dict[str, Any] | None:
