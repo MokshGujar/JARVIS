@@ -23,13 +23,24 @@ class AutomationCapability:
     def looks_like_request(self, message: str, *, session_id: str | None = None) -> bool:
         if not self.automation_service:
             return False
+        if not str(message or "").strip():
+            return False
         if self.automation_service.looks_like_automation_request(message):
             return True
         semantic_probe = getattr(self.automation_service, "looks_like_semantic_request", None)
         return bool(semantic_probe and semantic_probe(message, session_id=session_id))
 
     def execute(self, context: AssistantContext) -> CapabilityResult:
-        result = normalize_automation_response(self.automation_service.execute(context.message, session_id=context.session_id))
+        if not str(context.message or "").strip():
+            return CapabilityResult(text="", route="automation", events=[{"activity": {"event": "skipped", "reason": "empty_transcript"}}])
+        result = normalize_automation_response(
+            self.automation_service.execute(
+                context.message,
+                session_id=context.session_id,
+                turn_id=context.turn_id or context.client_request_id,
+                step_up_verified=bool(context.step_up_token),
+            )
+        )
         if "spoken_text" in result:
             text = str(result.get("spoken_text") or "")
         else:

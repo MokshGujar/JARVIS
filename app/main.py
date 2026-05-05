@@ -1013,6 +1013,7 @@ async def chat(request: ChatRequest):
                 voice_audio_base64=request.voice_audio_base64,
                 face_session_id=request.face_session_id,
                 step_up_token=request.step_up_token,
+                turn_id=request.turn_id or request.client_request_id,
                 client_request_id=request.client_request_id,
             ),
             mode="general",
@@ -1825,6 +1826,7 @@ async def chat_stream(request: ChatRequest):
                 voice_audio_base64=request.voice_audio_base64,
                 face_session_id=request.face_session_id,
                 step_up_token=request.step_up_token,
+                turn_id=request.turn_id or request.client_request_id,
                 client_request_id=request.client_request_id,
             ),
             mode="general",
@@ -1881,6 +1883,7 @@ async def chat_realtime(request: ChatRequest):
                 voice_audio_base64=request.voice_audio_base64,
                 face_session_id=request.face_session_id,
                 step_up_token=request.step_up_token,
+                turn_id=request.turn_id or request.client_request_id,
                 client_request_id=request.client_request_id,
             ),
             mode="realtime",
@@ -1930,6 +1933,7 @@ async def chat_realtime_stream(request: ChatRequest):
                 voice_audio_base64=request.voice_audio_base64,
                 face_session_id=request.face_session_id,
                 step_up_token=request.step_up_token,
+                turn_id=request.turn_id or request.client_request_id,
                 client_request_id=request.client_request_id,
             ),
             mode="realtime",
@@ -2004,6 +2008,7 @@ def _execute_fast_route(session_id: str, request: ChatRequest, route) -> tuple[s
                 voice_audio_base64=request.voice_audio_base64,
                 face_session_id=request.face_session_id,
                 step_up_token=request.step_up_token,
+                turn_id=request.turn_id or request.client_request_id,
                 client_request_id=request.client_request_id,
             ),
             route,
@@ -2223,7 +2228,7 @@ async def chat_jarvis_stream(request: ChatRequest):
         session_id = chat_service.get_or_create_session(request.session_id)
         metrics = LatencyTracker()
         metrics.mark("speech_end")
-        token = interrupt_manager.start(session_id, request.client_request_id)
+        token = interrupt_manager.start(session_id, request.turn_id or request.client_request_id)
 
         chunk_iter = _jarvis_realtime_pipeline(
             session_id,

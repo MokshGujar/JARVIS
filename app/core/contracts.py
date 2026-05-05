@@ -16,6 +16,7 @@ class AssistantRequest:
     voice_audio_base64: Optional[str] = None
     face_session_id: Optional[str] = None
     step_up_token: Optional[str] = None
+    turn_id: Optional[str] = None
     client_request_id: Optional[str] = None
 
 
@@ -29,6 +30,8 @@ class AssistantContext:
     voice_audio_base64: Optional[str] = None
     face_session_id: Optional[str] = None
     step_up_token: Optional[str] = None
+    turn_id: Optional[str] = None
+    client_request_id: Optional[str] = None
     memory_parts: List[str] = field(default_factory=list)
 
 

@@ -518,7 +518,7 @@ class ChatService:
                     ),
                 }
             }
-            automation_result = self.automation_service.execute(user_message)
+            automation_result = self.automation_service.execute(user_message, session_id=session_id)
             text = str(automation_result.get("message", "Done."))
             self.sessions[session_id][-1].content = text
             yield {
@@ -543,7 +543,7 @@ class ChatService:
                     "message": "Running desktop automation...",
                 }
             }
-            automation_result = self.automation_service.execute(user_message)
+            automation_result = self.automation_service.execute(user_message, session_id=session_id)
             text = str(automation_result.get("message", "Done."))
             self.sessions[session_id][-1].content = text
             yield {

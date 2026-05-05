@@ -586,6 +586,14 @@ class AutomationService:
         turn_id: str | None = None,
         step_up_verified: bool = False,
     ) -> Dict[str, object]:
+        if not str(command or "").strip():
+            return {
+                "success": False,
+                "action": "empty_transcript",
+                "message": "",
+                "display_text": "",
+                "spoken_text": "",
+            }
         if session_id:
             self._load_session_pending_state(session_id)
         previous_context = self._active_automation_context

@@ -21,5 +21,7 @@ class ContextBuilder:
             voice_audio_base64=request.voice_audio_base64,
             face_session_id=request.face_session_id,
             step_up_token=request.step_up_token,
+            turn_id=request.turn_id or request.client_request_id,
+            client_request_id=request.client_request_id,
             memory_parts=memory_parts,
         )
