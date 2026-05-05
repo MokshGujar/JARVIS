@@ -28,6 +28,9 @@ logs/
 tmp/
 temp/
 *.tmp
+database/*.sqlite
+database/*.sqlite3
+database/*.sqlite3.bak
 
 # Models / caches
 .cache/
