@@ -270,7 +270,7 @@ TOOL_INVENTORY: tuple[ToolInventoryRecord, ...] = (
         "file",
         "Local file and folder operations.",
         supported_intents=("file", "files", "local_files"),
-        supported_actions=("resolve_path", "create_file", "write_file", "append_file", "create_folder", "verify_exists", "read_file", "list_files", "search_files", "rename_file", "move_file", "delete_file", "delete_folder"),
+        supported_actions=("path", "resolve_path", "create", "create_file", "write_file", "append_file", "create_folder", "verify_exists", "read", "read_file", "list", "list_files", "search", "search_files", "rename", "rename_file", "move", "move_file", "delete", "delete_file", "delete_folder"),
         safety_level="CRITICAL",
         current_status="live_routed",
         legacy_delegate="AutomationService._execute_file_command_legacy",

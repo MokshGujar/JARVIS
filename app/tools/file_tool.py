@@ -4,9 +4,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.services.automation_file_ops import move_to_recycle_bin
 from app.services.command_risk_service import CommandRiskService
 from app.services.automation_response import normalize_automation_response
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+
+try:
+    from send2trash import send2trash
+except Exception:
+    send2trash = None
 
 
 class FileTool(BaseTool):
@@ -34,6 +40,7 @@ class FileTool(BaseTool):
             "rename_file",
             "move_file",
             "delete_file",
+            "delete_folder",
         ],
         metadata={"extraction_phase": "legacy_bridge"},
     )
@@ -133,6 +140,7 @@ class FileTool(BaseTool):
             "rename_file": self._planned_rename_file,
             "move_file": self._planned_move_file,
             "delete_file": self._planned_delete_file,
+            "delete_folder": self._planned_delete_folder,
         }
         handler = handlers.get(action)
         return handler(args) if handler is not None else None
@@ -338,4 +346,28 @@ class FileTool(BaseTool):
         return normalize_automation_response(self.automation_bridge._move_target(str(args.get("source") or ""), str(args.get("destination") or ""), target_kind="file"))
 
     def _planned_delete_file(self, args: dict[str, Any]) -> dict[str, Any]:
+        if args.get("confirmed"):
+            return self._confirmed_delete(str(args.get("path") or args.get("path_or_name") or ""), target_kind="file")
         return normalize_automation_response(self.automation_bridge._delete_file(str(args.get("path") or args.get("path_or_name") or "")))
+
+    def _planned_delete_folder(self, args: dict[str, Any]) -> dict[str, Any]:
+        if args.get("confirmed"):
+            return self._confirmed_delete(str(args.get("path") or args.get("path_or_name") or ""), target_kind="folder")
+        return normalize_automation_response(self.automation_bridge._delete_folder(str(args.get("path") or args.get("path_or_name") or "")))
+
+    def _confirmed_delete(self, path_text: str, *, target_kind: str) -> dict[str, Any]:
+        if self.automation_bridge is None:
+            return {"success": False, "action": f"delete_{target_kind}", "message": "File tool is not wired yet."}
+        try:
+            path = self.automation_bridge._resolve_existing_target(path_text, target_kind=target_kind)
+        except ValueError as exc:
+            return {"success": False, "action": f"delete_{target_kind}", "message": str(exc)}
+        result = move_to_recycle_bin(
+            path,
+            send_to_trash=send2trash,
+            is_protected_path=self.automation_bridge._is_protected_path,
+            display_target_name=self.automation_bridge._display_target_name,
+        )
+        normalized = normalize_automation_response(result)
+        normalized["tool_name"] = self.name
+        return normalized

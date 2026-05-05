@@ -106,20 +106,22 @@ class ToolExecutor:
 
             resolved_args = self._resolve_args(step.args, step_outputs)
             logger.debug("Step started: %s %s.%s", step.step_id, step.tool_name, step.action)
+            tool_payload = {
+                **context.payload,
+                "planned_step": step.as_dict(),
+                "step_id": step.step_id,
+                "step_outputs": step_outputs,
+            }
+            if step.args or plan.is_multistep or plan.metadata:
+                tool_payload["action"] = step.action
+                tool_payload["args"] = resolved_args
             tool_context = ToolContext(
                 command=context.command,
                 intent=step.intent,
                 session_id=context.session_id,
                 face_session_id=context.face_session_id,
                 step_up_token=context.step_up_token,
-                payload={
-                    **context.payload,
-                    "planned_step": step.as_dict(),
-                    "action": step.action,
-                    "args": resolved_args,
-                    "step_id": step.step_id,
-                    "step_outputs": step_outputs,
-                },
+                payload=tool_payload,
                 source=context.source,
                 user_id=context.user_id,
                 security_state=dict(context.security_state),
@@ -228,7 +230,7 @@ class ToolExecutor:
                 message="Confirmation is required before I can run that action.",
                 requires_followup=True,
                 requires_confirmation=True,
-                requires_face_step_up=decision.requires_face_step_up,
+                requires_face_step_up=decision.requires_step_up,
                 data={
                     "action": "confirmation_required",
                     "scenario": f"{step.tool_name}.{step.action}",

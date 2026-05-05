@@ -14,7 +14,6 @@ from typing import Callable, Dict, Iterable
 
 from config import AUTOMATION_CONTEXT_ENABLED, BASE_DIR
 from app.orchestrator.automation_context import AutomationContext, AutomationContextStore
-from app.services.automation_file_ops import move_to_recycle_bin
 from app.services.browser_control_service import BrowserControlService
 from app.services.computer_control_service import ComputerControlService
 from app.services.computer_settings_service import ComputerSettingsService
@@ -35,7 +34,9 @@ from app.tools.file_tool import FileTool
 from app.tools.summary_tool import SummaryTool
 from app.tools.system_tool import SystemTool
 from app.tools.whatsapp_tool import WhatsAppTool
+from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.main_orchestrator import MainOrchestrator
+from app.orchestrator.tool_executor import ToolExecutor
 from app.orchestrator.tool_registry import ToolRegistry
 
 try:
@@ -351,6 +352,9 @@ class AutomationService:
         self.game_service = GameService()
         self.safe_command_info_service = SafeCommandInfoService()
         self.message_action_service = MessageActionService()
+        self._active_session_id: str | None = None
+        self._active_turn_id: str | None = None
+        self._active_step_up_verified = False
 
     def has_pending_delete_confirmation(self) -> bool:
         return self._pending_delete_target is not None
@@ -574,11 +578,24 @@ class AutomationService:
             )
         return lowered in {"yes", "y", "yes do it", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "cancel that"}
 
-    def execute(self, command: str, *, session_id: str | None = None) -> Dict[str, object]:
+    def execute(
+        self,
+        command: str,
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        step_up_verified: bool = False,
+    ) -> Dict[str, object]:
         if session_id:
             self._load_session_pending_state(session_id)
         previous_context = self._active_automation_context
+        previous_session_id = self._active_session_id
+        previous_turn_id = self._active_turn_id
+        previous_step_up_verified = self._active_step_up_verified
         self._active_automation_context = self._automation_context_for(session_id)
+        self._active_session_id = session_id
+        self._active_turn_id = turn_id
+        self._active_step_up_verified = bool(step_up_verified)
         try:
             previous_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
             result = normalize_automation_response(self._execute_legacy(command))
@@ -590,6 +607,9 @@ class AutomationService:
             return result
         finally:
             self._active_automation_context = previous_context
+            self._active_session_id = previous_session_id
+            self._active_turn_id = previous_turn_id
+            self._active_step_up_verified = previous_step_up_verified
 
     def _automation_context_for(self, session_id: str | None) -> AutomationContext | None:
         if not AUTOMATION_CONTEXT_ENABLED:
@@ -1204,16 +1224,31 @@ class AutomationService:
         route = probe_orchestrator.route(command)
         if route is None or route.tool_name != expected_tool:
             return None
-        orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
-        return orchestrator.execute(ToolContext(command=command, intent=route.intent))
+        orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=True)
+        return orchestrator.execute(
+            ToolContext(
+                command=command,
+                intent=route.intent,
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                security_state={"step_up_verified": self._active_step_up_verified},
+            )
+        )
 
     def _execute_multistep_tool_plan(self, command: str) -> Dict[str, str | bool] | None:
         if self._looks_like_whatsapp_command(str(command or "").strip().lower()):
             return None
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
+        payload = {"turn_id": self._active_turn_id} if self._active_turn_id else {}
+        if self._active_automation_context is not None:
+            payload["automation_context"] = self._active_automation_context
         tool_context = ToolContext(
             command=command,
-            payload={"automation_context": self._active_automation_context} if self._active_automation_context is not None else {},
+            session_id=self._active_session_id,
+            request_id=self._active_turn_id,
+            payload=payload,
+            security_state={"step_up_verified": self._active_step_up_verified},
         )
         semantic_result = probe_orchestrator.semantic_adapter.try_live_result(
             command,
@@ -1223,7 +1258,7 @@ class AutomationService:
         if isinstance(semantic_result, dict):
             return semantic_result
         if semantic_result is not None:
-            orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
+            orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=True)
             return orchestrator.execute(tool_context)
 
         plan = probe_orchestrator.task_planner.plan(command)
@@ -1235,7 +1270,7 @@ class AutomationService:
                     self._pending_dry_run_plan = pending
                 return dry_probe
             return None
-        orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=False)
+        orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=True)
         result = orchestrator.execute(tool_context)
         if isinstance(result, dict) and result.get("dry_run"):
             pending = result.get("pending_dry_run_plan")
@@ -4299,11 +4334,32 @@ class AutomationService:
                     "action": "delete",
                     "message": "That item is no longer available to delete.",
                 }
-            return move_to_recycle_bin(
-                target,
-                send_to_trash=send2trash,
-                is_protected_path=self._is_protected_path,
-                display_target_name=self._display_target_name,
+            action = "delete_folder" if target.is_dir() else "delete_file"
+            plan_command = f"delete {'folder' if target.is_dir() else 'file'} {target}"
+            executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)
+            return executor.execute(
+                ActionPlan(
+                    original_text=plan_command,
+                    steps=[
+                        ActionStep(
+                            step_id="step1",
+                            tool_name="file",
+                            intent="file",
+                            action=action,
+                            args={"path": str(target), "confirmed": True},
+                        )
+                    ],
+                    is_multistep=False,
+                ),
+                ToolContext(
+                    command=plan_command,
+                    intent="file",
+                    session_id=self._active_session_id,
+                    request_id=self._active_turn_id,
+                    payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                    confirmation_state={"confirmed": True},
+                    security_state={"step_up_verified": self._active_step_up_verified},
+                ),
             )
 
         if response in {"no", "n", "cancel", "stop", "don't", "do not"}:
