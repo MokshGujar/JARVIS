@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.orchestrator.intent_router import RouteDecision
+from app.policy.policy_engine import PolicyEngine
+from app.tools.tool_inventory import get_tool_inventory_record
 
 
 @dataclass(slots=True)
@@ -19,67 +21,27 @@ class ScenarioPolicy:
     MEDIUM_FILE_OPERATIONS = {"create", "rename", "move", "update", "create_file", "write_file", "append_file", "create_folder", "rename_file", "move_file"}
     CRITICAL_FILE_OPERATIONS = {"delete", "delete_file", "delete_folder"}
 
-    def evaluate(self, route: RouteDecision) -> PolicyDecision:
-        if route.category == "file":
-            operation = route.operation
-            if operation in self.CRITICAL_FILE_OPERATIONS:
-                return PolicyDecision(
-                    safety_level="CRITICAL",
-                    requires_confirmation=True,
-                    requires_face_step_up=False,
-                    requires_voice_permission=True,
-                    reasons=["destructive_file_operation"],
-                )
-            if operation in self.MEDIUM_FILE_OPERATIONS:
-                return PolicyDecision(
-                    safety_level="MEDIUM",
-                    requires_confirmation=False,
-                    requires_face_step_up=False,
-                    reasons=["file_mutation"],
-                )
-            return PolicyDecision(safety_level="LOW", reasons=["file_read_only"])
+    def __init__(self, policy_engine: PolicyEngine | None = None) -> None:
+        self.policy_engine = policy_engine or PolicyEngine()
 
-        if route.category == "communication":
-            operation = str(route.operation or "").strip().lower()
-            inventory_decision = self._inventory_default(route)
-            if inventory_decision is not None and "action_safety" in inventory_decision.reasons:
-                return inventory_decision
-            protected = operation in {"send_message", "confirm_send", "call", "start_voice_call", "start_video_call", "video_call"}
-            return PolicyDecision(
-                safety_level="HIGH",
-                requires_confirmation=True,
-                requires_voice_permission=protected,
-                reasons=["external_communication"],
-            )
-        if route.category == "browser":
-            if route.operation == "form_submit":
-                return PolicyDecision(
-                    safety_level="CRITICAL",
-                    requires_confirmation=True,
-                    requires_voice_permission=True,
-                    reasons=["browser_form_submit"],
-                )
-            if route.operation == "form_input":
-                return PolicyDecision(safety_level="HIGH", requires_confirmation=True, reasons=["browser_form_or_click"])
-            return PolicyDecision(safety_level="LOW", reasons=["browser_navigation"])
-        if route.category == "system" and route.operation in {"shutdown", "restart", "shutdown_system", "restart_system"}:
-            return PolicyDecision(
-                safety_level="CRITICAL",
-                requires_confirmation=True,
-                requires_voice_permission=True,
-                reasons=["power_action"],
-            )
-        if route.category == "system" and route.operation in {"lock_system", "sleep_system"}:
-            return PolicyDecision(safety_level="HIGH", requires_confirmation=True, reasons=["lock_system"])
-        if route.category == "system":
-            return PolicyDecision(safety_level="LOW", reasons=["local_system_control"])
-        if route.category == "app":
-            close_risk = route.operation == "close"
-            return PolicyDecision(safety_level="HIGH" if close_risk else "LOW", requires_confirmation=close_risk, reasons=["app_control"])
-        inventory_decision = self._inventory_default(route)
-        if inventory_decision is not None:
-            return inventory_decision
-        return PolicyDecision(safety_level="LOW", reasons=[route.category or "unknown"])
+    def evaluate(self, route: RouteDecision) -> PolicyDecision:
+        core_decision = self.policy_engine.evaluate(
+            route.tool_name,
+            route.operation,
+            route.parameters,
+            context=None,
+        )
+        requires_voice_permission = core_decision.requires_step_up
+        record = get_tool_inventory_record(route.tool_name)
+        if record is not None and str(route.operation or "").strip().lower() in set(record.protected_actions):
+            requires_voice_permission = True
+        return PolicyDecision(
+            safety_level=core_decision.risk_level.value,
+            requires_confirmation=core_decision.requires_confirmation,
+            requires_face_step_up=core_decision.requires_step_up,
+            requires_voice_permission=requires_voice_permission,
+            reasons=[core_decision.reason, core_decision.decision.value],
+        )
 
     def _inventory_default(self, route: RouteDecision) -> PolicyDecision | None:
         try:
