@@ -166,9 +166,10 @@ class ToolReadinessContractTests(unittest.TestCase):
         result = executor.execute(plan, ToolContext(command="read clipboard"))
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "not_implemented")
+        self.assertEqual(result["action"], "tool_unavailable")
         self.assertEqual(result["failed_tool_name"], "clipboard")
-        self.assertEqual(result["step_results"][0]["error"], "not_implemented")
+        self.assertIn("not available", result["message"].lower())
+        self.assertEqual(result["step_results"], [])
 
     def test_tool_executor_preserves_previous_results_before_metadata_tool_failure(self):
         class FakeApp:
@@ -195,10 +196,10 @@ class ToolReadinessContractTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertTrue(result["partial_success"])
-        self.assertEqual(result["action"], "not_implemented")
-        self.assertEqual(len(result["step_results"]), 2)
+        self.assertEqual(result["action"], "tool_unavailable")
+        self.assertIn("not available", result["message"].lower())
+        self.assertEqual(len(result["step_results"]), 1)
         self.assertEqual(result["step_results"][0]["action"], "open")
-        self.assertEqual(result["step_results"][1]["error"], "not_implemented")
 
     def test_task_planner_first_five_patterns_remain_supported(self):
         planner = TaskPlanner()

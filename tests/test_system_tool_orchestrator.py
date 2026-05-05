@@ -55,9 +55,10 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         self.assertEqual(volume_policy.safety_level, "LOW")
         self.assertFalse(volume_policy.requires_confirmation)
         self.assertEqual(screenshot_policy.safety_level, "LOW")
-        self.assertEqual(lock_policy.safety_level, "HIGH")
+        self.assertEqual(lock_policy.safety_level, "CRITICAL")
         self.assertTrue(lock_policy.requires_confirmation)
         self.assertFalse(lock_policy.requires_face_step_up)
+        self.assertTrue(lock_policy.requires_voice_permission)
         self.assertEqual(shutdown_policy.safety_level, "CRITICAL")
         self.assertTrue(shutdown_policy.requires_confirmation)
         self.assertFalse(shutdown_policy.requires_face_step_up)
@@ -109,10 +110,20 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
         blocked = orchestrator.execute_text("lock my laptop")
-        allowed = orchestrator.execute(ToolContext(command="lock my laptop", confirmation_state={"confirmed": True}))
+        needs_voice_permission = orchestrator.execute(ToolContext(command="lock my laptop", confirmation_state={"confirmed": True}))
+        allowed = orchestrator.execute(
+            ToolContext(
+                command="lock my laptop",
+                confirmation_state={"confirmed": True},
+                security_state={"voice_permission_granted": True},
+            )
+        )
 
         self.assertEqual(blocked["action"], "confirmation_required")
         self.assertFalse(blocked["requires_face_step_up"])
+        self.assertEqual(needs_voice_permission["action"], "auth_required")
+        self.assertFalse(needs_voice_permission["requires_face_step_up"])
+        self.assertTrue(needs_voice_permission["requires_voice_permission"])
         self.assertTrue(allowed["success"])
         bridge._execute_system_command_legacy.assert_called_once_with("lock my laptop")
 

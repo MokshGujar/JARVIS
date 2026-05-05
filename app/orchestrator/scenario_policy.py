@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.orchestrator.intent_router import RouteDecision
+from app.policy.models import ToolRiskLevel
 from app.policy.policy_engine import PolicyEngine
 
 
@@ -11,6 +12,7 @@ class PolicyDecision:
     safety_level: str
     requires_confirmation: bool = False
     requires_face_step_up: bool = False
+    requires_step_up: bool = False
     requires_voice_permission: bool = False
     reasons: list[str] = field(default_factory=list)
 
@@ -24,12 +26,21 @@ class ScenarioPolicy:
         self.policy_engine = policy_engine or PolicyEngine()
 
     def evaluate(self, route: RouteDecision) -> PolicyDecision:
+        inventory_decision = self._inventory_default(route)
+        if inventory_decision is not None:
+            return inventory_decision
+
         core_decision = self.policy_engine.evaluate(
             route.tool_name,
             route.operation,
             route.parameters,
             context=None,
         )
+        requires_confirmation = core_decision.requires_confirmation
+        requires_step_up = core_decision.requires_step_up
+        if route.tool_name == "file" and str(route.operation or "").strip().lower() in self.MEDIUM_FILE_OPERATIONS:
+            requires_confirmation = False
+            requires_step_up = False
         requires_voice_permission = core_decision.requires_step_up
         try:
             from app.tools.tool_inventory import get_tool_inventory_record
@@ -41,9 +52,10 @@ class ScenarioPolicy:
             requires_voice_permission = True
         return PolicyDecision(
             safety_level=core_decision.risk_level.value,
-            requires_confirmation=core_decision.requires_confirmation,
-            requires_face_step_up=core_decision.requires_step_up,
-            requires_voice_permission=requires_voice_permission,
+            requires_confirmation=requires_confirmation,
+            requires_face_step_up=False,
+            requires_step_up=requires_step_up,
+            requires_voice_permission=requires_voice_permission and requires_step_up,
             reasons=[core_decision.reason, core_decision.decision.value],
         )
 
@@ -56,6 +68,8 @@ class ScenarioPolicy:
         record = get_tool_inventory_record(route.tool_name)
         if record is None:
             return None
+        if route.tool_name in {"app", "browser", "system", "file"}:
+            return None
         operation = str(route.operation or "").strip().lower()
         action_safety = dict(record.action_safety)
         has_action_override = operation in action_safety
@@ -64,10 +78,17 @@ class ScenarioPolicy:
         if safety_level in {"HIGH", "CRITICAL"}:
             requires_confirmation = True
         protected = operation in set(record.protected_actions)
+        if route.tool_name == "file":
+            core_decision = self.policy_engine.evaluate(route.tool_name, route.operation, route.parameters, context=None)
+            safety_level = core_decision.risk_level.value
+            requires_confirmation = core_decision.requires_confirmation
+            protected = protected or core_decision.requires_step_up
+        requires_step_up = protected or safety_level == ToolRiskLevel.CRITICAL.value and route.tool_name in {"terminal", "system"}
         return PolicyDecision(
             safety_level=safety_level,
             requires_confirmation=requires_confirmation,
             requires_face_step_up=False,
-            requires_voice_permission=protected or (record.requires_voice_permission and safety_level in {"HIGH", "CRITICAL"}),
+            requires_step_up=requires_step_up,
+            requires_voice_permission=requires_step_up or protected or (record.requires_voice_permission and safety_level in {"HIGH", "CRITICAL"}),
             reasons=[f"inventory:{record.name}", record.current_status] + (["action_safety"] if has_action_override else []),
         )

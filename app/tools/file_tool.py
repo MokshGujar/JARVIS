@@ -102,6 +102,17 @@ class FileTool(BaseTool):
         risk = self.risk_service.classify(command, command_action="automation")
         return ToolRisk(level=risk.risk_level, step_up_required=risk.step_up_required, reasons=list(risk.reasons))
 
+    def policy_args(self, action: str, args: dict[str, Any], context: ToolContext | None = None) -> dict[str, Any]:
+        if self.automation_bridge is None:
+            return {}
+        aliases = getattr(self.automation_bridge, "USER_PATH_ALIASES", {}) or {}
+        safe_roots = [
+            str(path)
+            for alias, path in aliases.items()
+            if str(alias).strip().lower() in {"desktop", "documents", "downloads"} and path
+        ]
+        return {"_safe_roots": safe_roots}
+
     def execute(self, context: ToolContext) -> dict[str, Any]:
         planned_action = str(context.payload.get("action") or "").strip()
         if planned_action:

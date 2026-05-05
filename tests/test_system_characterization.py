@@ -18,7 +18,6 @@ class SystemCharacterizationTests(unittest.TestCase):
             ("switch window", "alt+tab"),
             ("minimize window", "windows+down"),
             ("fullscreen", "f11"),
-            ("close current window", "alt+f4"),
         ]
         with patch.object(automation_module, "keyboard", fake_keyboard):
             for command, hotkey in cases:
@@ -65,9 +64,11 @@ class SystemCharacterizationTests(unittest.TestCase):
 
         result = service.execute("lock screen")
 
-        self.assertTrue(result["success"])
-        self.assertEqual(result["action"], "computer_settings")
-        service.computer_settings_service.execute.assert_called_once_with("lock screen")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["action"], "confirmation_required")
+        self.assertTrue(result["requires_voice_permission"])
+        self.assertFalse(result["requires_face_step_up"])
+        service.computer_settings_service.execute.assert_not_called()
 
     def test_shutdown_restart_and_unsafe_shell_commands_are_blocked_before_execution(self):
         service = AutomationService()

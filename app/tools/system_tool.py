@@ -29,6 +29,7 @@ class SystemTool(BaseTool):
             "shutdown",
             "restart",
             "screenshot",
+            "show_desktop",
             "safe_system_info",
             "window_control",
         ],

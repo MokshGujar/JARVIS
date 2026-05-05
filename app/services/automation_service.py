@@ -913,9 +913,17 @@ class AutomationService:
         if incomplete is not None:
             return incomplete
 
+        create_location_needed = self._preflight_create_file_location(normalized_text)
+        if create_location_needed is not None:
+            return create_location_needed
+
         multistep_result = self._execute_multistep_tool_plan(normalized_text)
         if multistep_result is not None:
             return multistep_result
+
+        create_plan_result = self._execute_create_plan_if_safe_scoped(normalized_text)
+        if create_plan_result is not None:
+            return create_plan_result
 
         system_result = self._execute_system_tool(normalized_text)
         if system_result is not None:
@@ -1215,9 +1223,12 @@ class AutomationService:
         }
 
     def _build_automation_tool_registry(self) -> ToolRegistry:
+        file_tool = FileTool(self)
+        if not isinstance(getattr(file_tool, "name", None), str) or not str(getattr(file_tool, "name", "")).strip():
+            file_tool.name = "file"
         return ToolRegistry(
             [
-                FileTool(self),
+                file_tool,
                 BrowserTool(BrowserConnector(self.browser_control_service), automation_bridge=self),
                 AppTool(self),
                 AppLauncherTool(self),
@@ -1233,7 +1244,7 @@ class AutomationService:
         if route is None or route.tool_name != expected_tool:
             return None
         orchestrator = MainOrchestrator(registry=self._build_automation_tool_registry(), enforce_policy=True)
-        return orchestrator.execute(
+        result = orchestrator.execute(
             ToolContext(
                 command=command,
                 intent=route.intent,
@@ -1243,6 +1254,19 @@ class AutomationService:
                 security_state={"step_up_verified": self._active_step_up_verified},
             )
         )
+        if expected_tool == "file" and isinstance(result, dict) and result.get("action") == "confirmation_required":
+            self._stage_delete_target_for_confirmation(command)
+        return result
+
+    def _stage_delete_target_for_confirmation(self, command: str) -> None:
+        match = re.match(r"^(?:delete|remove)(?:\s+the)?\s+(?:file|folder|directory)\s+(.+?)[.!?]*$", command, re.IGNORECASE)
+        if not match:
+            return
+        target_kind = "folder" if re.search(r"\b(?:folder|directory)\b", command, re.IGNORECASE) else "file"
+        try:
+            self._pending_delete_target = self._resolve_existing_target(match.group(1).strip(), target_kind=target_kind)
+        except ValueError:
+            self._pending_delete_target = None
 
     def _execute_multistep_tool_plan(self, command: str) -> Dict[str, str | bool] | None:
         if self._looks_like_whatsapp_command(str(command or "").strip().lower()):
@@ -1311,6 +1335,111 @@ class AutomationService:
 
     def _execute_system_tool(self, command: str) -> Dict[str, str | bool] | None:
         return self._execute_tool_with_orchestrator(command, expected_tool="system")
+
+    def _preflight_create_file_location(self, command: str) -> Dict[str, object] | None:
+        create_and_write_match = re.match(
+            r"^(?:create|make)(?:\s+a)?(?:\s+new)?\s+file(?:\s+called)?\s+(?P<target>.+?)\s+and\s+in\s+(?:that|the)\s+file\s+(?:add|write|append|put|insert)\s+(?P<content>[\s\S]+?)[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        create_match = re.match(
+            r"^(?:create|make)(?:\s+a)?(?:\s+new)?\s+file(?:\s+called)?\s+(?P<target>.+?)(?:(?:\s+with\s+content|\s+and\s+write|\s+and\s+add)\s+(?P<content>[\s\S]+))?[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        match = create_and_write_match or create_match
+        if not match:
+            return None
+        target = str(match.group("target") or "").strip()
+        if self._looks_like_explicit_path_request(target):
+            return None
+        file_name = self._clean_file_name(self._sanitize_file_reference(target))
+        if not file_name:
+            return None
+        content = str(match.groupdict().get("content") or "").strip().rstrip(".!?")
+        self._pending_create_file = {"name": file_name, "content": content}
+        return {
+            "success": False,
+            "action": "create_file_location_needed",
+            "message": f"Where should I save {file_name}?",
+            "requires_followup": True,
+        }
+
+    def _execute_create_plan_if_safe_scoped(self, command: str) -> Dict[str, object] | None:
+        folder_match = re.match(
+            r"^(?:create|make)(?:\s+a)?(?:\s+new)?\s+(?:folder|directory)(?:\s+called)?\s+(?P<target>.+?)[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        if folder_match:
+            target = folder_match.group("target").strip()
+            if not self._looks_like_explicit_path_request(target):
+                return None
+            try:
+                path = self._resolve_folder_target(target)
+            except ValueError as exc:
+                return {"success": False, "action": "create_folder", "message": str(exc)}
+            return self._execute_planned_file_steps(
+                command,
+                [
+                    ActionStep("step1", "file", "file", "create_folder", {"parent": str(path.parent), "name": path.name}),
+                ],
+            )
+
+        file_match = re.match(
+            r"^(?:create|make)(?:\s+a)?(?:\s+new)?\s+file(?:\s+called)?\s+(?P<target>.+?)(?:(?:\s+with\s+content|\s+and\s+write|\s+and\s+add)\s+(?P<content>[\s\S]+))?[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        if not file_match:
+            return None
+        target = file_match.group("target").strip()
+        if not self._looks_like_explicit_path_request(target):
+            return None
+        try:
+            path = self._resolve_file_target(target)
+        except ValueError as exc:
+            return {"success": False, "action": "create_file", "message": str(exc)}
+        content = str(file_match.group("content") or "").strip().rstrip(".!?")
+        steps = [
+            ActionStep("step1", "file", "file", "create_file", {"parent": str(path.parent), "filename": path.name}),
+        ]
+        if content:
+            steps.append(
+                ActionStep(
+                    "step2",
+                    "file",
+                    "file",
+                    "write_file",
+                    {"path": "{step1.path}", "content": content, "overwrite": False},
+                    depends_on=["step1"],
+                )
+            )
+            steps.append(
+                ActionStep(
+                    "step3",
+                    "file",
+                    "file",
+                    "verify_exists",
+                    {"path": "{step1.path}", "expected_content": content},
+                    depends_on=["step1", "step2"],
+                )
+            )
+        return self._execute_planned_file_steps(command, steps)
+
+    def _execute_planned_file_steps(self, command: str, steps: list[ActionStep]) -> Dict[str, object]:
+        executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)
+        return executor.execute(
+            ActionPlan(original_text=command, steps=steps, is_multistep=len(steps) > 1),
+            ToolContext(
+                command=command,
+                intent="file",
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                security_state={"step_up_verified": self._active_step_up_verified},
+            ),
+        )
 
     def _looks_like_mark_request(self, lowered: str) -> bool:
         if self._looks_like_whatsapp_command(lowered):
@@ -3664,7 +3793,48 @@ class AutomationService:
         self._pending_create_file = None
         file_name = str(pending.get("name", "")).strip()
         content = str(pending.get("content", ""))
-        return self._create_file(str(folder / Path(file_name.replace("/", "\\"))), content)
+        steps = [
+            ActionStep("step1", "file", "file", "create_file", {"parent": str(folder), "filename": file_name}),
+        ]
+        if content:
+            steps.append(
+                ActionStep(
+                    "step2",
+                    "file",
+                    "file",
+                    "write_file",
+                    {"path": "{step1.path}", "content": content, "overwrite": False},
+                    depends_on=["step1"],
+                )
+            )
+            steps.append(
+                ActionStep(
+                    "step3",
+                    "file",
+                    "file",
+                    "verify_exists",
+                    {"path": "{step1.path}", "expected_content": content},
+                    depends_on=["step1", "step2"],
+                )
+            )
+        target_path = folder / Path(file_name.replace("/", "\\"))
+        plan_command = f"create file {target_path}"
+        executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)
+        return executor.execute(
+            ActionPlan(
+                original_text=plan_command,
+                steps=steps,
+                is_multistep=bool(content),
+            ),
+            ToolContext(
+                command=plan_command,
+                intent="file",
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                security_state={"step_up_verified": self._active_step_up_verified},
+            ),
+        )
 
     def _resolve_openable_path(self, target: str) -> Path | None:
         cleaned = self._sanitize_file_reference(target)

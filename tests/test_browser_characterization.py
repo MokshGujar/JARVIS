@@ -121,8 +121,6 @@ class BrowserCharacterizationTests(unittest.TestCase):
         cases = [
             ("browser search ai news", ("search",), {"query": "ai news", "engine": "google"}),
             ("go to example.com", ("go_to",), {"url": "example.com"}),
-            ("browser click Accept", ("click",), {"text": "Accept"}),
-            ("browser type hello", ("smart_type",), {"text": "hello", "clear_first": True}),
             ("browser get text", ("get_text",), {}),
             ("close browser", ("close",), {}),
             ("browser scroll up 300", ("scroll",), {"direction": "up", "amount": 300}),
@@ -134,6 +132,14 @@ class BrowserCharacterizationTests(unittest.TestCase):
                 service.browser_control_service.execute.reset_mock()
                 service.execute(command)
                 service.browser_control_service.execute.assert_called_once_with(*args, **kwargs)
+
+        for command in ("browser click Accept", "browser type hello"):
+            with self.subTest(command=command):
+                service.browser_control_service.execute.reset_mock()
+                result = service.execute(command)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["action"], "confirmation_required")
+                service.browser_control_service.execute.assert_not_called()
 
 
 if __name__ == "__main__":

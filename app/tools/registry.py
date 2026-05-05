@@ -81,10 +81,8 @@ class ToolRegistry:
         status = _coerce_tool_status(getattr(spec, "status", "LIVE"))
         routing_mode = _coerce_routing_mode(getattr(spec, "routing_mode", "ACTIVE"))
         risk_level = _coerce_risk_level(getattr(spec, "safety_level", "LOW"))
-        allowed_actions = tuple(str(item).strip().lower() for item in getattr(spec, "allowed_actions", []) or [] if str(item).strip())
-        safe_partial_actions = tuple(
-            str(item).strip().lower() for item in getattr(spec, "safe_partial_actions", []) or [] if str(item).strip()
-        )
+        allowed_actions = _coerce_string_iterable(getattr(spec, "allowed_actions", []))
+        safe_partial_actions = _coerce_string_iterable(getattr(spec, "safe_partial_actions", []))
         return ToolMetadata(
             name=name,
             category=category,
@@ -125,3 +123,9 @@ def _coerce_risk_level(value: object) -> ToolRiskLevel:
     if normalized in {item.value for item in ToolRiskLevel}:
         return ToolRiskLevel(normalized)
     return ToolRiskLevel.LOW
+
+
+def _coerce_string_iterable(value: object) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        return ()
+    return tuple(str(item).strip().lower() for item in value if str(item).strip())

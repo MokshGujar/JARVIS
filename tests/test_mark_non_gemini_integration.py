@@ -213,8 +213,12 @@ class MarkNonGeminiIntegrationTests(unittest.TestCase):
             confirmed = self.service.execute("yes")
 
         self.assertFalse(first["success"])
-        self.assertTrue(confirmed["success"])
-        fake_trash.assert_called_once_with(str(target))
+        self.assertFalse(confirmed["success"])
+        self.assertEqual(confirmed["action"], "auth_required")
+        self.assertTrue(confirmed["requires_voice_permission"])
+        self.assertFalse(confirmed["requires_face_step_up"])
+        fake_trash.assert_not_called()
+        self.assertTrue(target.exists())
 
 
 if __name__ == "__main__":

@@ -23,8 +23,23 @@ class PolicyEngine:
     FILE_DELETE_ACTIONS = {"delete", "delete_file"}
     FOLDER_DELETE_ACTIONS = {"delete_folder", "bulk_delete", "delete_tree", "remove_folder", "remove_directory"}
     BROWSER_ALLOW_ACTIONS = {"search", "open_url", "open_site", "youtube_search", "youtube_play", "navigation", "go_to"}
-    SYSTEM_READ_ACTIONS = {"status", "safe_system_info", "screenshot", "volume_up", "volume_down", "mute_volume"}
+    SYSTEM_READ_ACTIONS = {"status", "safe_system_info", "screenshot", "volume_up", "volume_down", "mute_volume", "show_desktop"}
     SYSTEM_STEP_UP_ACTIONS = {"lock", "lock_system", "shutdown", "shutdown_system", "restart", "restart_system", "sleep_system"}
+    SYSTEM_SAFE_WINDOW_COMMANDS = {
+        "show desktop",
+        "show the desktop",
+        "switch window",
+        "switch windows",
+        "switch app",
+        "switch apps",
+        "next window",
+        "minimize window",
+        "minimize this window",
+        "minimize current window",
+        "fullscreen",
+        "full screen",
+        "toggle fullscreen",
+    }
     COMMUNICATION_SEND_ACTIONS = {
         "send",
         "send_message",
@@ -103,6 +118,13 @@ class PolicyEngine:
         if normalized_tool == "system":
             if normalized_action in self.SYSTEM_READ_ACTIONS:
                 return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "safe_system_action", normalized_tool, normalized_action, session_id, turn_id)
+            if normalized_action == "window_control":
+                command = str(getattr(context, "command", "") or "").strip().lower()
+                if command in self.SYSTEM_SAFE_WINDOW_COMMANDS or command.startswith(("hotkey ", "press ")):
+                    return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "safe_window_hotkey", normalized_tool, normalized_action, session_id, turn_id)
+                if command in {"close current window", "close this window", "close the current window"}:
+                    return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.HIGH, "close_window_requires_confirmation", normalized_tool, normalized_action, session_id, turn_id, requires_confirmation=True)
+                return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.MEDIUM, "window_control_requires_confirmation", normalized_tool, normalized_action, session_id, turn_id, requires_confirmation=True)
             if normalized_action in self.SYSTEM_STEP_UP_ACTIONS:
                 return self._decision(
                     PolicyDecisionType.STEP_UP,
@@ -150,15 +172,133 @@ class PolicyEngine:
     ) -> PolicyDecision:
         if action in self.FILE_READ_ACTIONS:
             if self._args_reference_sensitive_path(args):
-                return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.MEDIUM, "sensitive_file_read_requires_confirmation", tool_name, action, session_id, turn_id, requires_confirmation=True)
+                return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.HIGH, "protected_path_denied", tool_name, action, session_id, turn_id)
             return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "file_read_only", tool_name, action, session_id, turn_id)
         if action in self.FILE_MUTATION_ACTIONS:
+            if self._args_reference_sensitive_path(args):
+                return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.CRITICAL, "protected_path_denied", tool_name, action, session_id, turn_id)
+            safe_reason = self._safe_file_mutation_reason(action, args)
+            if safe_reason:
+                return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, safe_reason, tool_name, action, session_id, turn_id)
             return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.MEDIUM, "file_mutation_requires_confirmation", tool_name, action, session_id, turn_id, requires_confirmation=True)
         if action in self.FILE_DELETE_ACTIONS:
-            return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.CRITICAL, "file_delete_requires_confirmation", tool_name, action, session_id, turn_id, requires_confirmation=True)
+            return self._decision(
+                PolicyDecisionType.STEP_UP,
+                ToolRiskLevel.CRITICAL,
+                "file_delete_requires_confirmation_and_step_up",
+                tool_name,
+                action,
+                session_id,
+                turn_id,
+                requires_confirmation=True,
+                requires_step_up=True,
+            )
         if action in self.FOLDER_DELETE_ACTIONS:
             return self._decision(PolicyDecisionType.STEP_UP, ToolRiskLevel.CRITICAL, "folder_or_bulk_delete_requires_step_up", tool_name, action, session_id, turn_id, requires_confirmation=True, requires_step_up=True)
         return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.MEDIUM, "unknown_file_action_requires_confirmation", tool_name, action, session_id, turn_id, requires_confirmation=True)
+
+    def _safe_file_mutation_reason(self, action: str, args: dict[str, Any]) -> str | None:
+        if action in {"rename", "move", "rename_file", "move_file"}:
+            return None
+        if action == "create_folder":
+            candidate = self._candidate_create_path(args)
+            if candidate and self._is_safe_scoped_folder(candidate, args) and not Path(candidate).exists():
+                return "safe_scoped_folder_create"
+        if action in {"create", "create_file"}:
+            candidate = self._candidate_create_path(args)
+            if candidate and self._is_safe_scoped_file(candidate, args, require_content=False) and not Path(candidate).exists():
+                return "safe_scoped_file_create"
+        if action in {"write_file", "append_file", "write", "append", "update"}:
+            if bool(args.get("overwrite")):
+                return None
+            content = args.get("content")
+            if content is None or str(content) == "":
+                return None
+            candidate = args.get("path") or args.get("path_or_name") or args.get("target")
+            if candidate and self._is_safe_scoped_file(str(candidate), args, require_content=True):
+                return "safe_scoped_file_write"
+        return None
+
+    def _candidate_create_path(self, args: dict[str, Any]) -> str | None:
+        explicit = args.get("path") or args.get("path_or_name") or args.get("target")
+        if explicit:
+            return str(explicit)
+        parent = args.get("parent") or args.get("folder") or args.get("location")
+        filename = args.get("filename") or args.get("name")
+        if parent and filename:
+            return str(Path(str(parent)) / Path(str(filename)).name)
+        return None
+
+    def _is_safe_scoped_file(self, candidate: str, args: dict[str, Any], *, require_content: bool) -> bool:
+        text = str(candidate or "").strip()
+        if not text:
+            return False
+        if "{" in text or "}" in text:
+            return False
+        if self._contains_glob(text):
+            return False
+        path = Path(text)
+        name = path.name
+        if not name or name in {".", ".."} or name.startswith("."):
+            return False
+        if name.lower() in self.SENSITIVE_FILE_NAMES:
+            return False
+        if path.is_dir():
+            return False
+        if not path.suffix and "filename" not in args and "name" not in args and not path.exists():
+            return False
+        if require_content and (args.get("content") is None or str(args.get("content")) == ""):
+            return False
+        if self._args_reference_sensitive_path(args):
+            return False
+        try:
+            resolved = path.expanduser().resolve(strict=False)
+        except Exception:
+            resolved = path
+        if any(self._is_relative_to(resolved, root) for root in self._safe_file_roots(args)):
+            return True
+        return False
+
+    def _is_safe_scoped_folder(self, candidate: str, args: dict[str, Any]) -> bool:
+        text = str(candidate or "").strip()
+        if not text or "{" in text or "}" in text:
+            return False
+        if self._contains_glob(text):
+            return False
+        path = Path(text)
+        name = path.name
+        if not name or name in {".", ".."} or name.startswith("."):
+            return False
+        if self._args_reference_sensitive_path(args):
+            return False
+        try:
+            resolved = path.expanduser().resolve(strict=False)
+        except Exception:
+            resolved = path
+        return any(self._is_relative_to(resolved, root) for root in self._safe_file_roots(args))
+
+    def _safe_file_roots(self, args: dict[str, Any]) -> tuple[Path, ...]:
+        roots: list[Path] = []
+        configured = args.get("_safe_roots") or args.get("safe_roots")
+        if isinstance(configured, (list, tuple, set)):
+            roots.extend(Path(str(item)).expanduser().resolve(strict=False) for item in configured if str(item).strip())
+        elif configured:
+            roots.append(Path(str(configured)).expanduser().resolve(strict=False))
+        home = Path.home()
+        roots.extend([home / "Desktop", home / "Documents", home / "Downloads"])
+        return tuple(dict.fromkeys(roots))
+
+    @staticmethod
+    def _is_relative_to(path: Path, root: Path) -> bool:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _contains_glob(value: str) -> bool:
+        return any(char in value for char in ("*", "?"))
 
     def _metadata_block(
         self,

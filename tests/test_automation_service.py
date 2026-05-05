@@ -59,7 +59,8 @@ class AutomationServiceFileCreationTests(unittest.TestCase):
 
         self.assertTrue(created["success"])
         self.assertEqual(path.read_text(encoding="utf-8"), "hello. This is written by Jarvis")
-        self.assertEqual(created["message"], "Created test Jarvis in Desktop.")
+        self.assertIn("created test Jarvis", created["message"])
+        self.assertIn("wrote hello. This is written by Jarvis", created["message"])
         self.assertNotIn(str(path), created["message"])
 
         updated = self.service.execute("in that file add second line")
@@ -95,7 +96,9 @@ class AutomationServiceFileCreationTests(unittest.TestCase):
             confirmed = self.service.execute("yes")
 
         self.assertFalse(confirmed["success"])
-        self.assertIn("Send2Trash", confirmed["message"])
+        self.assertEqual(confirmed["action"], "auth_required")
+        self.assertTrue(confirmed["requires_voice_permission"])
+        self.assertFalse(confirmed["requires_face_step_up"])
         self.assertTrue(path.exists())
 
     def test_mark_style_system_commands_use_safe_hotkeys(self):

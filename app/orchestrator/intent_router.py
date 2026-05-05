@@ -46,6 +46,7 @@ class IntentRouter:
         ("mute_volume", re.compile(r"^(?:mute|mute volume|unmute|unmute volume)\b", re.I)),
         ("brightness_change", re.compile(r"^(?:brightness up|brightness down|increase brightness|decrease brightness)\b", re.I)),
         ("screenshot", re.compile(r"^(?:take screenshot|screenshot)\b", re.I)),
+        ("show_desktop", re.compile(r"^show(?:\s+the)?\s+desktop\b", re.I)),
         ("lock_system", re.compile(r"^lock(?:\s+(?:my\s+)?(?:laptop|computer|screen|system))?\b", re.I)),
         ("shutdown_system", re.compile(r"^(?:shutdown|shut down)(?:\s+(?:my\s+)?(?:laptop|computer|system))?\b", re.I)),
         ("restart_system", re.compile(r"^(?:restart|reboot)(?:\s+(?:my\s+)?(?:laptop|computer|system))?\b", re.I)),

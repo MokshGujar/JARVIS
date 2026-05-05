@@ -1,7 +1,7 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from app.services import automation_service as automation_module
 from app.services.automation_service import AutomationService
@@ -105,24 +105,11 @@ class FileCharacterizationTests(unittest.TestCase):
         source.write_text("hello", encoding="utf-8")
 
         renamed = self.service.execute(f"rename file {source} to notes.txt")
-        moved = self.service.execute("move file that file to documents")
-        delete_requested = self.service.execute("delete file that file")
 
-        self.assertTrue(renamed["success"])
-        self.assertEqual(renamed["action"], "rename")
-        moved_path = self.documents / "notes.txt"
-        self.assertTrue(moved["success"])
-        self.assertEqual(moved["action"], "move")
-        self.assertTrue(moved_path.exists())
-        self.assertFalse(delete_requested["success"])
-        self.assertEqual(delete_requested["action"], "delete_file")
-        self.assertIn("Reply yes or no", delete_requested["message"])
-        send_to_trash = Mock()
-        with patch.object(automation_module, "send2trash", send_to_trash):
-            confirmed = self.service.execute("yes")
-
-        self.assertTrue(confirmed["success"])
-        send_to_trash.assert_called_once_with(str(moved_path))
+        self.assertFalse(renamed["success"])
+        self.assertEqual(renamed["action"], "confirmation_required")
+        self.assertTrue(renamed["requires_confirmation"])
+        self.assertTrue(source.exists())
 
     def test_existing_destination_blocks_rename_and_move_without_overwrite(self):
         source = self.desktop / "test.txt"
@@ -133,8 +120,8 @@ class FileCharacterizationTests(unittest.TestCase):
         renamed = self.service.execute(f"rename file {source} to notes.txt")
 
         self.assertFalse(renamed["success"])
-        self.assertEqual(renamed["action"], "rename")
-        self.assertIn("already exists", renamed["message"])
+        self.assertEqual(renamed["action"], "confirmation_required")
+        self.assertTrue(renamed["requires_confirmation"])
         self.assertEqual(source.read_text(encoding="utf-8"), "source")
         self.assertEqual(destination.read_text(encoding="utf-8"), "destination")
 
@@ -143,8 +130,8 @@ class FileCharacterizationTests(unittest.TestCase):
         moved = self.service.execute(f"move file {source} to documents")
 
         self.assertFalse(moved["success"])
-        self.assertEqual(moved["action"], "move")
-        self.assertIn("already exists", moved["message"])
+        self.assertEqual(moved["action"], "confirmation_required")
+        self.assertTrue(moved["requires_confirmation"])
         self.assertTrue(source.exists())
 
     def test_protected_windows_and_appdata_paths_are_blocked(self):
@@ -165,7 +152,10 @@ class FileCharacterizationTests(unittest.TestCase):
         risk = CommandRiskService().classify(f"delete file {target}", command_action="automation")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "delete_file")
+        self.assertEqual(result["action"], "confirmation_required")
+        self.assertTrue(result["requires_confirmation"])
+        self.assertTrue(result["requires_voice_permission"])
+        self.assertFalse(result["requires_face_step_up"])
         self.assertTrue(risk.step_up_required)
 
     def test_ambiguous_file_reference_fails_without_wrong_execution(self):

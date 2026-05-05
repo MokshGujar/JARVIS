@@ -53,6 +53,29 @@ class ToolExecutor:
                     failed_step=step,
                 )
 
+            try:
+                tool = self.registry.by_name(step.tool_name)
+            except KeyError:
+                message = f"No tool is registered for planned step {step.step_id}: {step.tool_name}."
+                logger.debug("Missing tool for step %s: %s", step.step_id, step.tool_name)
+                audit_id = self._record_audit(
+                    context,
+                    step,
+                    plan=plan,
+                    policy_decision=PolicyDecisionType.DENY.value,
+                    execution_result="tool_not_found",
+                    error="tool_not_found",
+                )
+                return self._final_result(
+                    plan,
+                    success=False,
+                    action="tool_not_found",
+                    message=message,
+                    step_results=step_results,
+                    failed_step=step,
+                    extra={"missing_tool": step.tool_name, "partial_success": bool(step_results), "audit_id": audit_id},
+                )
+
             metadata = self._metadata_for_step(step)
             if metadata is None:
                 message = f"No executable metadata is registered for planned step {step.step_id}: {step.tool_name}."
@@ -74,8 +97,11 @@ class ToolExecutor:
                     extra={"missing_tool": step.tool_name, "partial_success": bool(step_results), "audit_id": audit_id},
                 )
 
-            policy_decision = self.policy_engine.evaluate(step.tool_name, step.action, step.args, context, metadata=metadata)
-            self._record_policy_decision(policy_decision, metadata)
+            resolved_args = self._resolve_args(step.args, step_outputs)
+            policy_args = self._policy_args(tool, step.action, resolved_args, context)
+            policy_decision = self.policy_engine.evaluate(step.tool_name, step.action, policy_args, context, metadata=metadata)
+            if self.enforce_policy:
+                self._record_policy_decision(policy_decision, metadata)
             policy_block = self._policy_block(step, context, policy_decision, metadata, plan)
             if policy_block is not None:
                 logger.debug("Policy blocked step %s: %s", step.step_id, policy_block)
@@ -89,22 +115,6 @@ class ToolExecutor:
                     extra=policy_block,
                 )
 
-            try:
-                tool = self.registry.by_name(step.tool_name)
-            except KeyError:
-                message = f"No tool is registered for planned step {step.step_id}: {step.tool_name}."
-                logger.debug("Missing tool for step %s: %s", step.step_id, step.tool_name)
-                return self._final_result(
-                    plan,
-                    success=False,
-                    action="tool_not_found",
-                    message=message,
-                    step_results=step_results,
-                    failed_step=step,
-                    extra={"missing_tool": step.tool_name, "partial_success": bool(step_results)},
-                )
-
-            resolved_args = self._resolve_args(step.args, step_outputs)
             logger.debug("Step started: %s %s.%s", step.step_id, step.tool_name, step.action)
             tool_payload = {
                 **context.payload,
@@ -142,7 +152,11 @@ class ToolExecutor:
                 "requires_face_step_up": step.requires_face_step_up,
                 "requires_voice_permission": step.requires_voice_permission,
             }
-            result["audit_id"] = self._record_execution(context, step, plan=plan, result=result, policy_decision=policy_decision)
+            result["audit_id"] = (
+                self._record_execution(context, step, plan=plan, result=result, policy_decision=policy_decision)
+                if self.enforce_policy
+                else None
+            )
             step_results.append(result)
             step_outputs[step.step_id] = result
             self._update_automation_context(plan, context, step, result)
@@ -182,7 +196,7 @@ class ToolExecutor:
     ) -> dict[str, Any] | None:
         step.safety_level = decision.risk_level.value
         step.requires_confirmation = decision.requires_confirmation
-        step.requires_face_step_up = decision.requires_step_up
+        step.requires_face_step_up = False
         step.requires_voice_permission = decision.requires_step_up
         if not self.enforce_policy:
             return None
@@ -190,6 +204,15 @@ class ToolExecutor:
         confirmed = bool(context.confirmation_state.get("confirmed") or context.payload.get("confirmed"))
         step_up_verified = self._step_up_verified(context)
         if decision.decision == PolicyDecisionType.DENY:
+            unavailable = decision.reason in {
+                "tool_disabled",
+                "tool_planned",
+                "tool_metadata_only",
+                "tool_hidden",
+                "partial_tool_action_not_safe",
+                "tool_action_not_allowed",
+            }
+            protected_path = decision.reason == "protected_path_denied"
             audit_id = self._record_audit(
                 context,
                 step,
@@ -202,27 +225,35 @@ class ToolExecutor:
             return ToolResult(
                 success=False,
                 tool_name=step.tool_name,
-                message=f"I can't run that action: {decision.reason}.",
+                message=(
+                    "That tool is not available yet."
+                    if unavailable
+                    else "That location is protected."
+                    if protected_path
+                    else f"I can't run that action: {decision.reason}."
+                ),
                 requires_followup=False,
                 requires_confirmation=False,
                 requires_face_step_up=False,
                 data={
-                    "action": "policy_denied",
+                    "action": "tool_unavailable" if unavailable else "policy_denied",
                     "scenario": f"{step.tool_name}.{step.action}",
                     "policy": decision.as_dict(),
                     "tool_metadata": metadata.as_dict(),
                     "audit_id": audit_id,
+                    "error": "unavailable" if unavailable else "policy_denied",
                 },
             ).as_dict()
 
         if decision.requires_confirmation and not confirmed:
+            confirmation_id = self._create_confirmation(context, step, plan, decision, metadata)
             audit_id = self._record_audit(
                 context,
                 step,
                 plan=plan,
                 policy_decision=decision.decision.value,
                 execution_result="confirmation_required",
-                metadata={"tool_metadata": metadata.as_dict(), "policy": decision.as_dict()},
+                metadata={"tool_metadata": metadata.as_dict(), "policy": decision.as_dict(), "confirmation_id": confirmation_id},
             )
             return ToolResult(
                 success=False,
@@ -230,15 +261,17 @@ class ToolExecutor:
                 message="Confirmation is required before I can run that action.",
                 requires_followup=True,
                 requires_confirmation=True,
-                requires_face_step_up=decision.requires_step_up,
+                requires_face_step_up=False,
                 data={
                     "action": "confirmation_required",
                     "scenario": f"{step.tool_name}.{step.action}",
                     "requires_step_up": decision.requires_step_up,
                     "requires_voice_permission": decision.requires_step_up,
+                    "requires_face_step_up": False,
                     "policy": decision.as_dict(),
                     "tool_metadata": metadata.as_dict(),
                     "audit_id": audit_id,
+                    "confirmation_id": confirmation_id,
                 },
             ).as_dict()
 
@@ -257,13 +290,14 @@ class ToolExecutor:
                 message="Step-up authentication is required before I can run that protected action.",
                 requires_followup=True,
                 requires_confirmation=False,
-                requires_face_step_up=True,
+                requires_face_step_up=False,
                 data={
                     "action": "auth_required",
                     "scenario": f"{step.tool_name}.{step.action}",
                     "auth": {"step_up_required": True, "voice_permission_required": True, "protected_action": True},
                     "requires_step_up": True,
                     "requires_voice_permission": True,
+                    "requires_face_step_up": False,
                     "policy": decision.as_dict(),
                     "tool_metadata": metadata.as_dict(),
                     "audit_id": audit_id,
@@ -277,6 +311,19 @@ class ToolExecutor:
             return self.registry.metadata_for(step.tool_name)
         except Exception:
             return None
+
+    @staticmethod
+    def _policy_args(tool: Any, action: str, resolved_args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        args = dict(resolved_args or {})
+        provider = getattr(tool, "policy_args", None)
+        if callable(provider):
+            try:
+                provided = provider(action, args, context)
+            except TypeError:
+                provided = provider(action, args)
+            if isinstance(provided, dict):
+                args.update(provided)
+        return args
 
     @staticmethod
     def _step_up_verified(context: ToolContext) -> bool:
@@ -306,6 +353,31 @@ class ToolExecutor:
             )
         except Exception:
             logger.debug("Could not record policy decision", exc_info=True)
+            return None
+
+    def _create_confirmation(
+        self,
+        context: ToolContext,
+        step: ActionStep,
+        plan: ActionPlan,
+        decision: CorePolicyDecision,
+        metadata: ToolMetadata,
+    ) -> str | None:
+        try:
+            return self.audit_store.create_pending_confirmation(
+                session_id=context.session_id,
+                turn_id=self._turn_id(context),
+                tool_name=step.tool_name,
+                action=step.action,
+                metadata={
+                    "plan": plan.as_dict(),
+                    "policy": decision.as_dict(),
+                    "tool_metadata": metadata.as_dict(),
+                    "args": dict(step.args or {}),
+                },
+            )
+        except Exception:
+            logger.debug("Could not create pending confirmation", exc_info=True)
             return None
 
     def _record_execution(

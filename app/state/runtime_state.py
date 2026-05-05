@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -182,6 +183,60 @@ class RuntimeStateStore:
             connection.commit()
             return int(cursor.lastrowid)
 
+    def create_pending_confirmation(
+        self,
+        *,
+        session_id: str | None,
+        turn_id: str | None,
+        tool_name: str,
+        action: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        self.ensure_schema()
+        self._ensure_optional_session_turn(session_id, turn_id)
+        confirmation_id = f"confirm-{uuid.uuid4().hex}"
+        now = _now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO confirmations(
+                    confirmation_id, session_id, turn_id, tool_name, action,
+                    status, created_at, updated_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (confirmation_id, session_id, turn_id, tool_name, action, now, now, _json(metadata or {})),
+            )
+            connection.commit()
+        return confirmation_id
+
+    def get_pending_confirmation(self, *, session_id: str | None, turn_id: str | None = None) -> dict[str, Any] | None:
+        self.ensure_schema()
+        clauses = ["status='pending'"]
+        values: list[Any] = []
+        if session_id is not None:
+            clauses.append("session_id=?")
+            values.append(session_id)
+        if turn_id is not None:
+            clauses.append("turn_id=?")
+            values.append(turn_id)
+        query = f"SELECT * FROM confirmations WHERE {' AND '.join(clauses)} ORDER BY created_at DESC LIMIT 1"
+        with self.connect() as connection:
+            row = connection.execute(query, values).fetchone()
+        return _row_dict(row) if row is not None else None
+
+    def resolve_confirmation(self, confirmation_id: str, *, status: str) -> None:
+        normalized = str(status or "").strip().lower()
+        if normalized not in {"accepted", "cancelled", "expired"}:
+            raise ValueError("confirmation status must be accepted, cancelled, or expired")
+        self.ensure_schema()
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE confirmations SET status=?, updated_at=? WHERE confirmation_id=? AND status='pending'",
+                (normalized, _now(), confirmation_id),
+            )
+            connection.commit()
+
     def _ensure_optional_session_turn(self, session_id: str | None, turn_id: str | None) -> None:
         if session_id:
             self.record_session(session_id)
@@ -298,3 +353,14 @@ def _json(value: dict[str, Any]) -> str:
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    metadata = result.get("metadata_json")
+    if isinstance(metadata, str):
+        try:
+            result["metadata"] = json.loads(metadata)
+        except Exception:
+            result["metadata"] = {}
+    return result
