@@ -15,9 +15,16 @@ class ToolSpec:
     category: str = "automation"
     risk_level: ToolRiskLevel = "LOW_RISK"
     safety_level: str = "LOW"
+    status: str = "LIVE"
+    routing_mode: str = "ACTIVE"
     requires_confirmation: bool = False
     requires_face_step_up: bool = False
+    requires_step_up: bool = False
     requires_voice_permission: bool = False
+    supports_dry_run: bool = False
+    adapter_provider: str | None = None
+    allowed_actions: list[str] = field(default_factory=list)
+    safe_partial_actions: list[str] = field(default_factory=list)
     supported_intents: list[str] = field(default_factory=list)
     timeout_seconds: float = 30.0
     required_capabilities: list[str] = field(default_factory=list)

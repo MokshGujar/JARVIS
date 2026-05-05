@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 from app.orchestrator.intent_router import RouteDecision
 from app.policy.policy_engine import PolicyEngine
-from app.tools.tool_inventory import get_tool_inventory_record
 
 
 @dataclass(slots=True)
@@ -32,7 +31,12 @@ class ScenarioPolicy:
             context=None,
         )
         requires_voice_permission = core_decision.requires_step_up
-        record = get_tool_inventory_record(route.tool_name)
+        try:
+            from app.tools.tool_inventory import get_tool_inventory_record
+
+            record = get_tool_inventory_record(route.tool_name)
+        except Exception:
+            record = None
         if record is not None and str(route.operation or "").strip().lower() in set(record.protected_actions):
             requires_voice_permission = True
         return PolicyDecision(

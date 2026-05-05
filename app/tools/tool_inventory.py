@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from app.orchestrator.tool_registry import ToolRegistry
+from app.policy.models import RoutingMode, ToolMetadata, ToolRiskLevel, ToolStatus
 from app.tools.base import AutomationTool, BaseTool, ToolContext, ToolResult, ToolRisk, ToolSpec
 from app.tools.app_interaction_tool import AppInteractionTool
 from app.tools.stt_tool import STTTool
@@ -32,6 +33,8 @@ VALID_TOOL_CATEGORIES = {
 }
 
 VALID_TOOL_STATUSES = {"live_routed", "thin_wrapper", "metadata_only", "disabled"}
+VALID_CANONICAL_TOOL_STATUSES = {item.value for item in ToolStatus}
+VALID_ROUTING_MODES = {item.value for item in RoutingMode}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +49,9 @@ class ToolInventoryRecord:
     requires_face_step_up: bool = False
     requires_voice_permission: bool = False
     current_status: str = "metadata_only"
+    status: str = ToolStatus.PLANNED.value
+    routing_mode: str = RoutingMode.METADATA_ONLY.value
+    supports_dry_run: bool = False
     legacy_delegate: str | None = None
     target_connector: str | None = None
     target_adapter: str | None = None
@@ -53,6 +59,7 @@ class ToolInventoryRecord:
     target_repository: str | None = None
     action_safety: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     protected_actions: tuple[str, ...] = field(default_factory=tuple)
+    safe_partial_actions: tuple[str, ...] = field(default_factory=tuple)
     planned_phase: str = "future"
     test_requirements: tuple[str, ...] = field(default_factory=tuple)
 
@@ -61,26 +68,61 @@ class ToolInventoryRecord:
             name=self.name,
             description=self.description,
             category=self.category,
+            risk_level=self.safety_level,
             safety_level=self.safety_level,
+            status=self.status,
+            routing_mode=self.routing_mode,
             requires_confirmation=self.requires_confirmation,
             requires_face_step_up=self.requires_face_step_up,
+            requires_step_up=self.requires_face_step_up,
             requires_voice_permission=self.requires_voice_permission,
+            supports_dry_run=self.supports_dry_run,
+            adapter_provider=self.adapter_provider,
+            allowed_actions=list(self.supported_actions),
+            safe_partial_actions=list(self.safe_partial_actions),
             supported_intents=list(self.supported_intents),
             metadata={
                 "requires_voice_permission": self.requires_voice_permission,
                 "supported_actions": list(self.supported_actions),
                 "current_status": self.current_status,
                 "status": self.current_status,
+                "canonical_status": self.status,
+                "routing_mode": self.routing_mode,
+                "risk_level": self.safety_level,
+                "requires_step_up": self.requires_face_step_up,
+                "supports_dry_run": self.supports_dry_run,
                 "legacy_delegate": self.legacy_delegate,
                 "target_connector": self.target_connector,
                 "target_adapter": self.target_adapter,
                 "target_provider": self.target_provider,
+                "adapter_provider": self.adapter_provider,
                 "target_repository": self.target_repository,
                 "action_safety": dict(self.action_safety),
                 "protected_actions": list(self.protected_actions),
+                "allowed_actions": list(self.supported_actions),
+                "safe_partial_actions": list(self.safe_partial_actions),
                 "planned_phase": self.planned_phase,
                 "test_requirements": list(self.test_requirements),
             },
+        )
+
+    @property
+    def adapter_provider(self) -> str | None:
+        return self.target_adapter or self.target_provider or self.target_connector or self.legacy_delegate
+
+    def as_tool_metadata(self) -> ToolMetadata:
+        return ToolMetadata(
+            name=self.name,
+            category=self.category,
+            status=ToolStatus(self.status),
+            routing_mode=RoutingMode(self.routing_mode),
+            risk_level=ToolRiskLevel(self.safety_level),
+            requires_confirmation=self.requires_confirmation,
+            requires_step_up=self.requires_face_step_up,
+            supports_dry_run=self.supports_dry_run,
+            adapter_provider=self.adapter_provider,
+            allowed_actions=tuple(self.supported_actions),
+            safe_partial_actions=tuple(self.safe_partial_actions),
         )
 
 
@@ -168,6 +210,9 @@ def _record(
     requires_face_step_up: bool | None = None,
     requires_voice_permission: bool = False,
     current_status: str = "metadata_only",
+    status: str | None = None,
+    routing_mode: str | None = None,
+    supports_dry_run: bool = False,
     legacy_delegate: str | None = None,
     target_connector: str | None = None,
     target_adapter: str | None = None,
@@ -175,10 +220,12 @@ def _record(
     target_repository: str | None = None,
     action_safety: Iterable[tuple[str, str]] = (),
     protected_actions: Iterable[str] = (),
+    safe_partial_actions: Iterable[str] = (),
     planned_phase: str = "future",
     test_requirements: Iterable[str] = (),
 ) -> ToolInventoryRecord:
     default_confirmation, default_step_up = _defaults_for_safety(safety_level)
+    canonical_status, canonical_routing_mode = _canonical_status_for(current_status)
     return ToolInventoryRecord(
         name=name,
         category=category,
@@ -190,6 +237,9 @@ def _record(
         requires_face_step_up=default_step_up if requires_face_step_up is None else requires_face_step_up,
         requires_voice_permission=requires_voice_permission,
         current_status=current_status,
+        status=str(status or canonical_status),
+        routing_mode=str(routing_mode or canonical_routing_mode),
+        supports_dry_run=supports_dry_run,
         legacy_delegate=legacy_delegate,
         target_connector=target_connector,
         target_adapter=target_adapter,
@@ -197,9 +247,21 @@ def _record(
         target_repository=target_repository,
         action_safety=tuple((str(action).strip().lower(), str(level).upper()) for action, level in action_safety),
         protected_actions=tuple(str(action).strip().lower() for action in protected_actions if str(action).strip()),
+        safe_partial_actions=tuple(str(action).strip().lower() for action in safe_partial_actions if str(action).strip()),
         planned_phase=planned_phase,
         test_requirements=tuple(test_requirements),
     )
+
+
+def _canonical_status_for(current_status: str) -> tuple[str, str]:
+    normalized = str(current_status or "").strip().lower()
+    if normalized == "live_routed":
+        return ToolStatus.LIVE.value, RoutingMode.ACTIVE.value
+    if normalized == "thin_wrapper":
+        return ToolStatus.PARTIAL.value, RoutingMode.ACTIVE.value
+    if normalized == "disabled":
+        return ToolStatus.DISABLED.value, RoutingMode.DISABLED.value
+    return ToolStatus.PLANNED.value, RoutingMode.METADATA_ONLY.value
 
 
 TOOL_INVENTORY: tuple[ToolInventoryRecord, ...] = (
@@ -225,14 +287,14 @@ TOOL_INVENTORY: tuple[ToolInventoryRecord, ...] = (
     _record("contact", "contact", "Contact lookup and fuzzy resolution.", supported_intents=("contact", "contacts", "contact_resolution"), supported_actions=("resolve", "disambiguate", "alias"), safety_level="LOW", current_status="metadata_only", legacy_delegate="ContactMatchService", planned_phase="contact_memory", test_requirements=("clarification", "ttl")),
     _record("phone", "phone", "Phone command bridge.", supported_intents=("phone", "phone_command"), supported_actions=("call_contact", "end_call", "send_sms", "phone_bridge_status"), safety_level="HIGH", current_status="metadata_only", legacy_delegate="PhoneCommandService", action_safety=(("phone_bridge_status", "LOW"), ("end_call", "LOW"), ("call_contact", "HIGH"), ("send_sms", "HIGH")), protected_actions=("call_contact", "send_sms"), planned_phase="phone_connector", test_requirements=("no_real_call", "confirmation_required")),
     _record("caller_lookup", "phone", "Incoming caller identity and summary lookup.", supported_intents=("caller_lookup",), supported_actions=("lookup", "summarize"), safety_level="LOW", current_status="metadata_only", legacy_delegate="CallerLookupService", planned_phase="phone_connector", test_requirements=("cache", "privacy")),
-    _record("stt", "voice", "Speech-to-text capture and transcription.", supported_intents=("stt", "speech_to_text", "transcribe_file", "transcribe_audio_bytes", "readiness"), supported_actions=("transcribe_file", "transcribe_audio_bytes", "readiness", "warmup"), safety_level="LOW", current_status="thin_wrapper", target_provider="NemoParakeetProvider", planned_phase="current", test_requirements=("fake_stt_provider", "no_microphone_required", "no_real_model_in_unit_tests")),
+    _record("stt", "voice", "Speech-to-text capture and transcription.", supported_intents=("stt", "speech_to_text", "transcribe_file", "transcribe_audio_bytes", "readiness"), supported_actions=("transcribe_file", "transcribe_audio_bytes", "readiness", "warmup"), safety_level="LOW", current_status="thin_wrapper", target_provider="NemoParakeetProvider", safe_partial_actions=("transcribe_file", "transcribe_audio_bytes", "readiness", "warmup"), planned_phase="current", test_requirements=("fake_stt_provider", "no_microphone_required", "no_real_model_in_unit_tests")),
     _record("tts", "voice", "Text-to-speech output.", supported_intents=("tts", "text_to_speech"), supported_actions=("speak", "synthesize", "stop", "readiness", "thinking_audio"), safety_level="LOW", current_status="metadata_only", target_provider="edge_tts", planned_phase="voice_layer", test_requirements=("no_real_audio_required",)),
     _record("voice_identity", "security", "Voice identity workflow bridge for protected-only authorization.", supported_intents=("voice_identity", "face_identity"), supported_actions=("verify", "enroll_status"), safety_level="LOW", current_status="disabled", legacy_delegate="FaceIdentityService", planned_phase="security_readiness", test_requirements=("auth_mocks",)),
     _record("memory", "memory", "Personal and session memory.", supported_intents=("memory", "recall", "remember"), supported_actions=("remember", "recall", "forget", "context"), safety_level="LOW", current_status="metadata_only", legacy_delegate="PersonalMemoryService", target_repository="memory repository", planned_phase="memory_layer", test_requirements=("session_isolation",)),
     _record("reminder", "reminder", "Reminder parsing and scheduling.", supported_intents=("reminder", "create_reminder"), supported_actions=("create", "list", "cancel", "update"), safety_level="MEDIUM", current_status="metadata_only", legacy_delegate="ReminderService", planned_phase="memory_layer", test_requirements=("time_mocks",)),
     _record("task_status", "memory", "Background task status tracking.", supported_intents=("task_status",), supported_actions=("status", "cancel", "list"), safety_level="LOW", current_status="disabled", legacy_delegate="TaskManager", planned_phase="task_layer", test_requirements=("task_mocks",)),
     _record("research", "research", "Search and research workflows.", supported_intents=("research", "realtime_search"), supported_actions=("web_search", "web_fetch", "compare_sources", "answer_with_sources", "summarize_sources"), safety_level="LOW", current_status="metadata_only", legacy_delegate="ResearchToolsService", target_provider="search provider", planned_phase="research_layer", test_requirements=("provider_mocks",)),
-    _record("summary", "research", "Summarization over text or tool outputs.", supported_intents=("summary", "summarize"), supported_actions=("summarize", "extract_key_points", "make_notes"), safety_level="LOW", current_status="thin_wrapper", target_adapter="Summarizer provider", planned_phase="current", test_requirements=("fake_summarizer", "no_live_provider_required")),
+    _record("summary", "research", "Summarization over text or tool outputs.", supported_intents=("summary", "summarize"), supported_actions=("summarize", "extract_key_points", "make_notes"), safety_level="LOW", current_status="thin_wrapper", target_adapter="Summarizer provider", safe_partial_actions=("summarize", "extract_key_points", "make_notes"), planned_phase="current", test_requirements=("fake_summarizer", "no_live_provider_required")),
     _record("youtube", "media", "YouTube transcript and media helpers.", supported_intents=("youtube", "youtube_search", "youtube_summary"), supported_actions=("search", "play", "transcript", "summarize"), safety_level="LOW", current_status="metadata_only", legacy_delegate="YouTubeToolsService", planned_phase="media_layer", test_requirements=("provider_mocks",)),
     _record("vision", "media", "Vision and image description.", supported_intents=("vision", "image_description"), supported_actions=("describe", "inspect", "extract_text"), safety_level="LOW", current_status="metadata_only", legacy_delegate="VisionService", target_adapter="vision provider", planned_phase="vision_layer", test_requirements=("image_mocks",)),
     _record(
@@ -294,6 +356,32 @@ TOOL_INVENTORY: tuple[ToolInventoryRecord, ...] = (
             ("click_coordinates", "HIGH"),
             ("verify_text_present", "LOW"),
             ("read_window_title", "LOW"),
+        ),
+        safe_partial_actions=(
+            "type_text",
+            "type_into_active_field",
+            "append_text",
+            "press_safe_key",
+            "press_key",
+            "press_hotkey",
+            "select_address_bar",
+            "submit_current_field",
+            "clear_current_field",
+            "replace_current_field",
+            "copy_selection",
+            "paste_text",
+            "select_all",
+            "undo",
+            "redo",
+            "open_new_tab",
+            "close_current_tab",
+            "browser_back",
+            "browser_forward",
+            "refresh",
+            "click_text",
+            "click_coordinates",
+            "verify_text_present",
+            "read_window_title",
         ),
         planned_phase="current",
         test_requirements=("no_real_keyboard_mouse", "adapter_mocks", "coordinates_disabled_by_default"),
