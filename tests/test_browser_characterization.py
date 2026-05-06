@@ -2,6 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import Mock, patch
 
+from app.adapters.browser import browser_runtime_adapter as browser_runtime_module
 from app.services import browser_control_service as browser_module
 from app.services.automation_service import AutomationService
 from app.services.browser_control_service import BrowserControlService, FutureTimeout
@@ -55,7 +56,7 @@ class BrowserCharacterizationTests(unittest.TestCase):
         return service
 
     def test_browser_control_success_actions_keep_response_shape(self):
-        with patch.object(browser_module, "async_playwright", object()):
+        with patch.object(browser_runtime_module, "async_playwright", object()):
             service = self.make_service()
 
             cases = [
@@ -79,13 +80,13 @@ class BrowserCharacterizationTests(unittest.TestCase):
                     self.assertEqual(result["message"], message)
 
     def test_current_url_sets_current_url_field(self):
-        with patch.object(browser_module, "async_playwright", object()):
+        with patch.object(browser_runtime_module, "async_playwright", object()):
             result = self.make_service().execute("current_url")
 
         self.assertEqual(result["current_url"], "https://example.com")
 
     def test_unavailable_playwright_fails_with_install_hint(self):
-        with patch.object(browser_module, "async_playwright", None), patch.object(browser_module, "PLAYWRIGHT_IMPORT_ERROR", "missing"):
+        with patch.object(browser_runtime_module, "async_playwright", None), patch.object(browser_runtime_module, "PLAYWRIGHT_IMPORT_ERROR", "missing"):
             result = self.make_service().execute("go_to", url="example.com")
 
         self.assertFalse(result["success"])
@@ -98,7 +99,7 @@ class BrowserCharacterizationTests(unittest.TestCase):
                 coro.close()
                 raise FutureTimeout()
 
-        with patch.object(browser_module, "async_playwright", object()):
+        with patch.object(browser_runtime_module, "async_playwright", object()):
             service = BrowserControlService()
             service._thread = TimeoutThread()
             result = service.execute("get_text")
@@ -107,7 +108,7 @@ class BrowserCharacterizationTests(unittest.TestCase):
         self.assertEqual(result["message"], "Browser control timed out while running get_text.")
 
     def test_unsupported_action_fails_closed(self):
-        with patch.object(browser_module, "async_playwright", object()):
+        with patch.object(browser_runtime_module, "async_playwright", object()):
             result = self.make_service().execute("unsupported")
 
         self.assertFalse(result["success"])

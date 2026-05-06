@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from app.adapters.browser import browser_runtime_adapter as browser_runtime_module
 from app.services.automation_response import normalize_automation_response
-from app.services import browser_control_service as browser_module
 from app.services.browser_control_service import BrowserControlService
 from app.services.automation_service import AutomationService
 from app.services.command_risk_service import CommandRiskService
@@ -281,7 +281,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         service = AutomationService()
         service._appopener_available = True
 
-        with patch("app.services.automation_service.appopener_open") as mocked_open:
+        with patch.object(service.local_app_connector, "open_app_candidate") as mocked_open:
             result = service.execute("call someone")
 
         mocked_open.assert_not_called()
@@ -613,7 +613,7 @@ class AutomationReliabilityTests(unittest.TestCase):
                 self.assertIsNotNone(service._pending_whatsapp_clarification)
 
     def test_browser_control_reports_playwright_install_guidance_when_unavailable(self):
-        with patch.object(browser_module, "async_playwright", None), patch.object(browser_module, "PLAYWRIGHT_IMPORT_ERROR", "missing"):
+        with patch.object(browser_runtime_module, "async_playwright", None), patch.object(browser_runtime_module, "PLAYWRIGHT_IMPORT_ERROR", "missing"):
             result = BrowserControlService().execute("search", query="python docs")
 
         self.assertFalse(result["success"])

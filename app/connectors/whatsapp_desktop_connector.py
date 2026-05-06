@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.whatsapp_desktop_automation import WhatsAppDesktopAutomation
+from app.adapters.whatsapp.desktop_adapter import WhatsAppDesktopAdapter
 
 
 class WhatsAppDesktopConnector:
     def __init__(self, automation: Any | None = None) -> None:
-        self.automation = automation or WhatsAppDesktopAutomation()
+        self.automation = automation or WhatsAppDesktopAdapter()
 
     def open(self) -> dict[str, Any]:
         return self.automation.open()

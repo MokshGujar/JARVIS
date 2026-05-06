@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import re
-import subprocess
-import webbrowser
 from pathlib import Path
 from typing import Dict
-from urllib.parse import quote_plus
+
+from app.connectors.game_launcher_connector import GameLauncherConnector
 
 try:
     import psutil
@@ -24,6 +23,9 @@ class GameService:
     """Steam/Epic helpers adapted without generated commands or Gemini."""
 
     SENSITIVE_WORDS = ("install", "download", "schedule", "cancel schedule", "shutdown after")
+
+    def __init__(self, launcher: GameLauncherConnector | None = None) -> None:
+        self.launcher = launcher or GameLauncherConnector()
 
     def can_handle(self, command: str) -> bool:
         lowered = self._normalize(command)
@@ -75,27 +77,22 @@ class GameService:
         if "status" in lowered or "running" in lowered:
             return self.status()
         if "download status" in lowered or "downloads" in lowered:
-            webbrowser.open("steam://open/downloads")
-            return {"success": True, "action": "game", "message": "Opened Steam downloads."}
+            return self.launcher.open_steam_downloads()
         if "list" in lowered or "installed" in lowered:
             return self.list_installed_games()
         if "update" in lowered:
-            webbrowser.open("steam://open/downloads")
-            return {"success": True, "action": "game", "message": "Opened Steam downloads so you can check updates."}
+            return self.launcher.open_steam_downloads(updates=True)
         if "steam" in lowered:
-            webbrowser.open("steam://open/main")
-            return {"success": True, "action": "game", "message": "Opened Steam."}
+            return self.launcher.open_steam()
         if "epic" in lowered:
-            self._open_epic_launcher()
-            return {"success": True, "action": "game", "message": "Opening Epic Games Launcher."}
+            return self.launcher.open_epic_launcher()
         return {"success": False, "action": "game", "message": "Game support covers Steam/Epic status, lists, updates, install confirmations, and download status."}
 
     def confirm(self, pending: dict) -> Dict[str, str | bool]:
         action = pending.get("action")
         target = pending.get("target") or ""
         if action == "install":
-            webbrowser.open(f"https://store.steampowered.com/search/?term={quote_plus(target)}")
-            return {"success": True, "action": "game", "message": f"Opened the Steam store search for {target}. Review it before installing."}
+            return self.launcher.open_steam_store_search(target)
         if action == "schedule":
             return {"success": True, "action": "game", "message": f"Scheduled game action noted for {target}. Jarvis does not auto-install without you confirming at install time."}
         if action == "cancel_schedule":
@@ -178,17 +175,6 @@ class GameService:
             if candidate.exists():
                 return candidate
         return None
-
-    def _open_epic_launcher(self) -> None:
-        candidates = (
-            Path(r"C:\Program Files (x86)\Epic Games\Launcher\Portal\Binaries\Win64\EpicGamesLauncher.exe"),
-            Path(r"C:\Program Files\Epic Games\Launcher\Portal\Binaries\Win64\EpicGamesLauncher.exe"),
-        )
-        for candidate in candidates:
-            if candidate.exists():
-                subprocess.Popen([str(candidate)])
-                return
-        webbrowser.open("https://store.epicgames.com/")
 
     def _normalize(self, command: str) -> str:
         return " ".join((command or "").strip().lower().split()).strip(" .!?")

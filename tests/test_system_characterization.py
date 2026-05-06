@@ -1,7 +1,6 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from app.services import automation_service as automation_module
 from app.services.automation_service import AutomationService
 from app.services.command_risk_service import CommandRiskService
 
@@ -9,7 +8,8 @@ from app.services.command_risk_service import CommandRiskService
 class SystemCharacterizationTests(unittest.TestCase):
     def test_keyboard_system_hotkeys(self):
         service = AutomationService()
-        fake_keyboard = Mock()
+        service.computer_control_service = Mock()
+        service.computer_control_service.hotkey.return_value = {"success": True, "action": "computer_control", "message": "pressed"}
         cases = [
             ("volume up", "volume up"),
             ("volume down", "volume down"),
@@ -19,24 +19,28 @@ class SystemCharacterizationTests(unittest.TestCase):
             ("minimize window", "windows+down"),
             ("fullscreen", "f11"),
         ]
-        with patch.object(automation_module, "keyboard", fake_keyboard):
-            for command, hotkey in cases:
-                with self.subTest(command=command):
-                    fake_keyboard.press_and_release.reset_mock()
-                    result = service.execute(command)
-                    self.assertTrue(result["success"])
-                    self.assertEqual(result["action"], "system")
-                    self.assertEqual(result["message"], f"Done {service._match_system_command(command) or command}.")
-                    fake_keyboard.press_and_release.assert_called_once_with(hotkey)
+        for command, hotkey in cases:
+            with self.subTest(command=command):
+                service.computer_control_service.hotkey.reset_mock()
+                result = service.execute(command)
+                self.assertTrue(result["success"])
+                self.assertEqual(result["action"], "system")
+                self.assertEqual(result["message"], f"Done {service._match_system_command(command) or command}.")
+                service.computer_control_service.hotkey.assert_called_once_with(hotkey.split("+"))
 
     def test_keyboard_unavailable_fails_closed(self):
         service = AutomationService()
-        with patch.object(automation_module, "keyboard", None), patch.object(automation_module, "KEYBOARD_IMPORT_ERROR", "missing"):
-            result = service.execute("volume up")
+        service.computer_control_service = Mock()
+        service.computer_control_service.hotkey.return_value = {
+            "success": False,
+            "action": "computer_control",
+            "message": "Computer control is not available. Import error: missing",
+        }
+        result = service.execute("volume up")
 
         self.assertFalse(result["success"])
         self.assertEqual(result["action"], "system")
-        self.assertIn("Keyboard control is not available", result["message"])
+        self.assertIn("Computer control is not available", result["message"])
 
     def test_computer_control_actions_delegate_to_service(self):
         service = AutomationService()

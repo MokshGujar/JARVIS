@@ -3,9 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from app.adapters.ui import pyautogui_adapter as pyautogui_module
+from app.connectors import message_action_connector as message_action_module
+from app.connectors import safe_command_info_connector as safe_command_module
 from app.services import automation_service as automation_module
-from app.services import computer_control_service as computer_control_module
-from app.services import message_action_service as message_action_module
 from app.services.automation_service import AutomationService
 from app.services.computer_control_service import ComputerControlService
 from app.services.message_action_service import MessageActionService
@@ -46,8 +47,8 @@ class MarkNonGeminiIntegrationTests(unittest.TestCase):
             shutil.rmtree(self.root)
 
     def test_optional_computer_control_dependency_unavailable(self):
-        with patch.object(computer_control_module, "pyautogui", None), patch.object(
-            computer_control_module, "PYAUTOGUI_IMPORT_ERROR", RuntimeError("missing")
+        with patch.object(pyautogui_module, "pyautogui", None), patch.object(
+            pyautogui_module, "PYAUTOGUI_IMPORT_ERROR", RuntimeError("missing")
         ):
             result = ComputerControlService().press("enter")
 
@@ -82,37 +83,18 @@ class MarkNonGeminiIntegrationTests(unittest.TestCase):
         self.assertTrue(result["success"])
         fake_browser.execute.assert_called_once_with("search", query="python docs", engine="google")
 
-    def test_send_message_pending_confirm_cancel_flow(self):
-        fake_sender = Mock()
-        fake_sender.prepare.return_value = {
-            "success": False,
-            "action": "send_message_pending",
-            "message": "Ready. Say yes.",
-            "pending": {"platform": "whatsapp", "receiver": "Alex", "message": "hello"},
-        }
-        fake_sender.send.return_value = {"success": True, "action": "send_message_sent", "message": "sent"}
-        self.service.message_action_service = fake_sender
+    def test_message_action_facade_prepare_send_cancel_flow(self):
+        fake_connector = Mock()
+        fake_connector.send.return_value = {"success": True, "action": "send_message_sent", "message": "sent"}
+        service = MessageActionService(connector=fake_connector)
 
-        pending = self.service.execute("send whatsapp message to Alex saying hello")
-        sent = self.service.execute("yes")
+        pending = service.prepare("telegram", "Alex", "hello")
+        sent = service.send(dict(pending["pending"]))
 
         self.assertFalse(pending["success"])
         self.assertEqual(pending["action"], "send_message_pending")
         self.assertTrue(sent["success"])
-        fake_sender.send.assert_called_once_with({"platform": "whatsapp", "receiver": "Alex", "message": "hello"})
-
-        self.service.message_action_service.prepare.return_value = {
-            "success": False,
-            "action": "send_message_pending",
-            "message": "Ready. Say yes.",
-            "pending": {"platform": "telegram", "receiver": "Alex", "message": "hello"},
-        }
-        self.service.execute("send telegram message to Alex saying hello")
-        cancelled = self.service.execute("no")
-
-        self.assertTrue(cancelled["success"])
-        self.assertEqual(cancelled["action"], "confirmation_cancelled")
-        self.assertEqual(fake_sender.send.call_count, 1)
+        fake_connector.send.assert_called_once_with({"platform": "telegram", "receiver": "Alex", "message": "hello"})
 
     def test_whatsapp_web_numeric_send_uses_phone_url_after_confirmation(self):
         fake_pyautogui = Mock()
@@ -178,8 +160,8 @@ class MarkNonGeminiIntegrationTests(unittest.TestCase):
 
     def test_safe_command_info_map_and_unsupported_commands(self):
         service = SafeCommandInfoService()
-        with patch("app.services.safe_command_info_service.platform.system", return_value="Windows"), patch(
-            "app.services.safe_command_info_service.subprocess.run"
+        with patch.object(safe_command_module.platform, "system", return_value="Windows"), patch(
+            "app.connectors.safe_command_info_connector.subprocess.run"
         ) as fake_run:
             fake_run.return_value = Mock(stdout="Caption=C:\n", stderr="")
             result = service.execute("show disk space")

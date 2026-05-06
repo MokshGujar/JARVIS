@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 
 class LocalFilesConnector:
@@ -35,3 +36,11 @@ class LocalFilesConnector:
         if target.exists():
             raise FileExistsError(str(target))
         return Path(source).rename(target)
+
+    def move(self, source: str | Path, destination: str | Path) -> Path:
+        target = Path(destination)
+        if target.exists():
+            raise FileExistsError(str(target))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        return target

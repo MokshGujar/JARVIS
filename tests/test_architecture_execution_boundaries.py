@@ -13,6 +13,34 @@ FORBIDDEN_TOKENS = (
     "pyautogui",
     "pywinauto",
 )
+DANGEROUS_IMPORTS = {
+    "AppOpener",
+    "keyboard",
+    "pyautogui",
+    "pywinauto",
+    "subprocess",
+    "webbrowser",
+}
+DANGEROUS_CALLS = {
+    ("os", "startfile"),
+    ("os", "system"),
+    ("webbrowser", "open"),
+    ("shutil", "move"),
+    ("shutil", "rmtree"),
+    ("Path", "unlink"),
+}
+DANGEROUS_CALL_BASES = {"pyautogui", "pywinauto", "keyboard", "subprocess"}
+COMPATIBILITY_FACADE_SERVICES = {
+    "automation_service.py",
+    "browser_control_service.py",
+    "computer_control_service.py",
+    "computer_settings_service.py",
+    "game_service.py",
+    "message_action_service.py",
+    "safe_command_info_service.py",
+    "whatsapp_desktop_automation.py",
+    "youtube_tools_service.py",
+}
 
 
 def _python_files(path: Path) -> list[Path]:
@@ -79,5 +107,80 @@ def test_config_app_is_not_imported_by_runtime_source():
             text = path.read_text(encoding="utf-8")
             if "config.app" in text or "config/app" in text:
                 offenders.append(str(path.relative_to(ROOT)))
+
+    assert offenders == []
+
+
+def _dangerous_imports(module: ast.Module) -> list[str]:
+    imports: list[str] = []
+    for node in ast.walk(module):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root in DANGEROUS_IMPORTS:
+                    imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if root in DANGEROUS_IMPORTS:
+                imports.append(node.module or "")
+    return imports
+
+
+def _call_name(node: ast.AST) -> tuple[str, str] | None:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return None
+    base = node.func.value
+    if isinstance(base, ast.Name):
+        return base.id, node.func.attr
+    return None
+
+
+def test_service_facades_do_not_contain_direct_execution_apis_except_automation_legacy():
+    offenders: list[str] = []
+    services_root = ROOT / "app" / "services"
+    for path in _python_files(services_root):
+        if path.name == "automation_service.py":
+            continue
+        if path.name not in COMPATIBILITY_FACADE_SERVICES:
+            continue
+        source = path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+        for imported in _dangerous_imports(module):
+            offenders.append(f"{path.relative_to(ROOT)} imports {imported}")
+        for node in ast.walk(module):
+            call = _call_name(node)
+            if call is None:
+                continue
+            base, attr = call
+            if base in DANGEROUS_CALL_BASES or (base, attr) in DANGEROUS_CALLS:
+                offenders.append(f"{path.relative_to(ROOT)} calls {base}.{attr}")
+
+    assert offenders == []
+
+
+def test_high_level_routing_paths_do_not_call_connectors_or_adapters_directly():
+    high_level_methods = {
+        "app/services/automation_service.py": {"execute", "_execute_facade"},
+        "app/orchestrator/main_orchestrator.py": {"execute", "handle_command"},
+        "app/orchestrator/intent_router.py": {"route", "resolve"},
+    }
+    offenders: list[str] = []
+    for relative_path, method_names in high_level_methods.items():
+        path = ROOT / relative_path
+        if not path.exists():
+            continue
+        source = path.read_text(encoding="utf-8")
+        module = ast.parse(source)
+        for node in ast.walk(module):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name not in method_names:
+                continue
+            segment = ast.get_source_segment(source, node) or ""
+            if ".connector." in segment or ".adapter." in segment:
+                offenders.append(f"{relative_path}:{node.name} directly touches connector/adapter state")
+            for call in ast.walk(node):
+                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                    called = call.func.id
+                    if called.endswith("Connector") or called.endswith("Adapter"):
+                        offenders.append(f"{relative_path}:{node.name} constructs {called}")
 
     assert offenders == []

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 import time
-import webbrowser
 from typing import Dict
-from urllib.parse import quote
+
+from app.connectors.youtube_connector import YouTubeConnector
 
 try:
     import requests
@@ -24,16 +24,15 @@ except Exception as exc:  # pragma: no cover
 
 
 class YouTubeToolsService:
-    def __init__(self, groq_service=None) -> None:
+    def __init__(self, groq_service=None, youtube_connector: YouTubeConnector | None = None) -> None:
         self.groq_service = groq_service
+        self.youtube_connector = youtube_connector or YouTubeConnector()
 
     def play(self, query: str) -> Dict[str, str | bool]:
         query = (query or "").strip()
         if not query:
             return {"success": False, "action": "youtube_tools", "message": "Tell me what to play on YouTube."}
-        url = f"https://www.youtube.com/results?search_query={quote(query)}"
-        webbrowser.open(url)
-        return {"success": True, "action": "youtube_tools", "message": f"Opened YouTube search for {query}."}
+        return self.youtube_connector.play(query)
 
     def summarize(self, url: str) -> Dict[str, str | bool]:
         video_id = self._extract_video_id(url)
@@ -107,4 +106,3 @@ class YouTubeToolsService:
                 return " ".join(item.get("text", "") for item in transcript.fetch())
             except Exception:
                 return None
-

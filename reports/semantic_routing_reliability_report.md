@@ -18,4 +18,6 @@ Date: 2026-05-06
 
 ## Remaining
 
-- Broader service-level containment is still transitional. Direct service APIs remain documented in the containment report and should be moved behind connectors/adapters in narrow future batches.
+- Service-level direct execution APIs were moved behind connectors/adapters during the containment phase. Remaining risks are semantic breadth risks, not known direct execution bypasses:
+  - non-WhatsApp external messaging remains compatibility-only until a dedicated MessageTool is promoted from metadata-only status;
+  - broader conversational follow-up resolution should stay narrow so general chat is not overclaimed as automation.

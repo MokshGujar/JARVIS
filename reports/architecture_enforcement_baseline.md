@@ -4,7 +4,7 @@ Date: 2026-05-06
 
 ## Summary
 
-The canonical automation path exists, but `AutomationService` still contains legacy execution delegates. This phase makes `AutomationService.execute()` enter a facade path that tries `MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool` before any direct legacy fallback. Legacy execution methods remain as compatibility delegates for tool classes only.
+The canonical automation path exists and service-level direct execution has been contained. `AutomationService.execute()` enters a facade path that routes known executable commands through `MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool`. Legacy method names remain for tool compatibility, but low-level app/browser/process/keyboard/file-move primitives have moved behind connectors/adapters.
 
 ## Current Runtime Path Confirmation
 
@@ -25,12 +25,11 @@ Allowed inside tool/connector/adapter boundaries:
 - `app/adapters/ui/pywinauto_adapter.py`: `pywinauto` UI adapter boundary.
 - `app/adapters/providers/nemo_parakeet_provider.py`: temporary audio file cleanup.
 
-Suspicious high-level service execution still present as transitional delegates:
+Contained service execution:
 
-- `app/services/automation_service.py`: `subprocess`, `AppOpener`, `webbrowser.open`, `os.startfile`, file writes, and `shutil.move`. Delegate methods are explicitly marked as tool-only legacy delegates.
-- `app/services/computer_control_service.py`, `computer_settings_service.py`, `browser_control_service.py`, `whatsapp_desktop_automation.py`, `message_action_service.py`, `game_service.py`, `youtube_tools_service.py`, and `safe_command_info_service.py` still contain low-level APIs and should be moved behind tool/connector/adapter boundaries in later narrow patches.
-
-Current grep still finds these APIs in the service files above. They are documented as transitional containment work; canonical app/browser/file/system/WhatsApp command tests route through orchestrator, policy, executor, registry, and tools.
+- `app/services/automation_service.py`: no longer imports/calls `subprocess`, `AppOpener`, `webbrowser.open`, `os.startfile`, `keyboard`, or `shutil.move` directly. Transitional delegate methods remain, but they call connectors/adapters or tool-owned helpers.
+- `app/services/computer_control_service.py`, `computer_settings_service.py`, `browser_control_service.py`, `whatsapp_desktop_automation.py`, `message_action_service.py`, `game_service.py`, `youtube_tools_service.py`, and `safe_command_info_service.py` now act as compatibility facades over connector/adapter boundaries.
+- Current grep finds direct execution APIs in tools/connectors/adapters only, plus read-only `winreg` discovery in service path alias/game metadata helpers.
 
 Must stay guarded behind tool/policy:
 

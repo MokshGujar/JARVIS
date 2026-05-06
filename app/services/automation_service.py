@@ -3,11 +3,8 @@ import json
 import logging
 import os
 import re
-import shutil
-import subprocess
 import time
 import urllib.parse
-import webbrowser
 import uuid
 from pathlib import Path
 from typing import Callable, Dict, Iterable
@@ -26,6 +23,9 @@ from app.services.safe_command_info_service import SafeCommandInfoService
 from app.services.youtube_tools_service import YouTubeToolsService
 from app.services.whatsapp_desktop_automation import WhatsAppDesktopAutomation
 from app.connectors.browser_connector import BrowserConnector
+from app.connectors.local_app_connector import LocalAppConnector
+from app.connectors.local_files_connector import LocalFilesConnector
+from app.connectors.youtube_connector import YouTubeConnector
 from app.tools.base import ToolContext
 from app.tools.app_tool import AppTool
 from app.tools.app_launcher_tool import AppLauncherTool
@@ -46,27 +46,6 @@ try:
 except Exception as exc:
     send2trash = None
     SEND2TRASH_IMPORT_ERROR = exc
-
-try:
-    from AppOpener import close as appopener_close
-    from AppOpener import open as appopener_open
-    APP_OPENER_IMPORT_ERROR = None
-except Exception as exc:
-    appopener_open = None
-    appopener_close = None
-    APP_OPENER_IMPORT_ERROR = exc
-
-try:
-    import keyboard
-    KEYBOARD_IMPORT_ERROR = None
-except Exception as exc:
-    keyboard = None
-    KEYBOARD_IMPORT_ERROR = exc
-
-try:
-    import winreg
-except Exception:
-    winreg = None
 
 
 logger = logging.getLogger("J.A.R.V.I.S")
@@ -290,7 +269,6 @@ class AutomationService:
     USER_PATH_ALIASES = build_user_path_aliases()
 
     def __init__(self, groq_service=None):
-        self._appopener_available = appopener_open is not None and appopener_close is not None
         self._pending_delete_target: Path | None = None
         self._pending_open_target: dict | None = None
         self._pending_browser_search: dict | None = None
@@ -313,11 +291,17 @@ class AutomationService:
         self.computer_control_service = ComputerControlService()
         self.computer_settings_service = ComputerSettingsService(self.computer_control_service)
         self.browser_control_service = BrowserControlService()
+        self.local_app_connector = LocalAppConnector(self.browser_control_service)
+        self.local_files_connector = LocalFilesConnector()
+        self._appopener_available = self.local_app_connector.appopener_available
         self.contact_match_service = ContactMatchService()
         self._whatsapp_contacts_provider: Callable[[], Iterable[ContactCandidate]] | None = None
         self._active_whatsapp_call: dict | None = None
         self.whatsapp_desktop = WhatsAppDesktopAutomation()
-        self.youtube_tools_service = YouTubeToolsService(groq_service=groq_service)
+        self.youtube_tools_service = YouTubeToolsService(
+            groq_service=groq_service,
+            youtube_connector=YouTubeConnector(BrowserConnector(self.browser_control_service)),
+        )
         self.game_service = GameService()
         self.safe_command_info_service = SafeCommandInfoService()
         self.message_action_service = MessageActionService()
@@ -2500,17 +2484,31 @@ class AutomationService:
 
     def _execute_browser_control_legacy(self, command: str) -> Dict[str, str | bool] | None:
         # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
-        tool = BrowserTool(BrowserConnector(self.browser_control_service))
-        return tool.execute(ToolContext(command=command, intent="browser"))
+        executor = ToolExecutor(registry=ToolRegistry([BrowserTool(BrowserConnector(self.browser_control_service))]), enforce_policy=True)
+        return executor.execute(
+            ActionPlan(
+                original_text=command,
+                steps=[ActionStep("step1", "browser", "browser", "navigation", {})],
+                is_multistep=False,
+            ),
+            ToolContext(
+                command=command,
+                intent="browser",
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+            ),
+        )
 
     def _execute_browser_command_legacy(self, command: str, context=None) -> Dict[str, str | bool] | None:
         # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         normalized_text = self._normalize_spoken_command(command)
         lowered = normalized_text.lower()
 
-        control_result = self._execute_browser_control_legacy(normalized_text)
-        if control_result is not None:
-            return control_result
+        if self._looks_like_browser_control(lowered):
+            control_result = self._execute_browser_control_legacy(normalized_text)
+            if control_result is not None:
+                return control_result
 
         google_search_match = re.match(
             r"^(?:google search|search google for|search)\s+(.+?)(?:\s+on\s+google)?[.!?]*$",
@@ -2799,8 +2797,7 @@ class AutomationService:
         web_target = self._resolve_web_target(normalized_target)
         if web_target:
             try:
-                webbrowser.open(web_target)
-                logger.info("[AUTOMATION] Opened web target: %s", web_target)
+                self.local_app_connector.open_web_target(web_target)
                 return {
                     "success": True,
                     "action": "open",
@@ -2816,9 +2813,8 @@ class AutomationService:
         file_system_target = self._resolve_openable_path(normalized_target)
         if file_system_target is not None:
             try:
-                os.startfile(str(file_system_target))
+                self.local_app_connector.open_path(file_system_target)
                 self._remember_target(file_system_target)
-                logger.info("[AUTOMATION] Opened path: %s", file_system_target)
                 return {
                     "success": True,
                     "action": "open",
@@ -2854,8 +2850,7 @@ class AutomationService:
 
         for candidate in candidates:
             try:
-                appopener_open(candidate, match_closest=True, output=False, throw_error=True)
-                logger.info("[AUTOMATION] Opened app via AppOpener: %s", candidate)
+                self.local_app_connector.open_app_candidate(candidate)
                 return {
                     "success": True,
                     "action": "open",
@@ -3104,8 +3099,7 @@ class AutomationService:
 
         for candidate in candidates:
             try:
-                appopener_close(candidate, match_closest=True, output=False, throw_error=True)
-                logger.info("[AUTOMATION] Closed app via AppOpener: %s", candidate)
+                self.local_app_connector.close_app_candidate(candidate)
                 return {
                     "success": True,
                     "action": "close",
@@ -3222,13 +3216,6 @@ class AutomationService:
         return None
 
     def _system_command(self, command: str) -> Dict[str, str | bool]:
-        if keyboard is None:
-            return {
-                "success": False,
-                "action": "system",
-                "message": f"Keyboard control is not available on this machine. Import error: {KEYBOARD_IMPORT_ERROR}",
-            }
-
         keymap = {
             "mute": "volume mute",
             "unmute": "volume mute",
@@ -3245,12 +3232,15 @@ class AutomationService:
         if not hotkey:
             return {"success": False, "action": "system", "message": f"I don't know how to run the system command {command}."}
 
-        try:
-            keyboard.press_and_release(hotkey)
+        result = self.computer_control_service.hotkey(hotkey.split("+"))
+        if bool(result.get("success")):
             logger.info("[AUTOMATION] Ran system command: %s", command)
             return {"success": True, "action": "system", "message": f"Done {command}."}
-        except Exception as exc:
-            return {"success": False, "action": "system", "message": f"I could not run {command}: {exc}"}
+        return {
+            "success": False,
+            "action": "system",
+            "message": str(result.get("message") or f"I could not run {command}."),
+        }
 
     def _type_text(
         self,
@@ -3266,21 +3256,13 @@ class AutomationService:
                 "action": "type",
                 "message": "Tell me what you want me to type.",
             }
-        if keyboard is None:
-            return {
-                "success": False,
-                "action": "type",
-                "message": f"Typing is not available on this machine. Import error: {KEYBOARD_IMPORT_ERROR}",
-            }
         try:
             if delay_before > 0:
                 time.sleep(delay_before)
             self._prepare_typing_surface(focus_target)
-            write_delay = 0.004 if len(payload) <= 120 else 0.0025
-            keyboard.write(payload, delay=write_delay)
-            if press_enter:
-                time.sleep(0.08)
-                keyboard.press_and_release("enter")
+            result = self.computer_control_service.type_text(payload, clear_first=False, press_enter=press_enter)
+            if not bool(result.get("success")):
+                return {"success": False, "action": "type", "message": str(result.get("message") or "Typing is unavailable.")}
             logger.info("[AUTOMATION] Typed text into active window.")
             return {
                 "success": True,
@@ -3295,12 +3277,10 @@ class AutomationService:
             }
 
     def _prepare_typing_surface(self, target: str) -> None:
-        if keyboard is None:
-            return
         normalized_target = self._normalize_target(target).lower()
         if normalized_target in {"chrome", "google chrome", "edge", "microsoft edge"}:
             time.sleep(0.15)
-            keyboard.press_and_release("ctrl+l")
+            self.computer_control_service.hotkey(["ctrl", "l"])
             time.sleep(0.12)
 
     def _recommended_type_delay(self, target: str) -> float:
@@ -3381,7 +3361,7 @@ class AutomationService:
         file_system_target = self._resolve_openable_path(normalized_target)
         if file_system_target is not None:
             try:
-                os.startfile(str(file_system_target))
+                self.local_app_connector.open_path(file_system_target)
                 self._remember_target(file_system_target)
                 result = {
                     "success": True,
@@ -3425,8 +3405,7 @@ class AutomationService:
         candidates = self._appopener_candidates(normalized_target)
         for candidate in candidates:
             try:
-                appopener_open(candidate, match_closest=True, output=False, throw_error=True)
-                logger.info("[AUTOMATION] Opened app via AppOpener: %s", candidate)
+                self.local_app_connector.open_app_candidate(candidate)
                 label = friendly_name or normalized_target
                 result = {
                     "success": True,
@@ -3592,28 +3571,8 @@ class AutomationService:
         }
 
     def _open_url(self, url: str, browser: str | None = None) -> None:
-        normalized_browser = self._normalize_target(browser).lower() if browser else ""
-        if normalized_browser:
-            executable = self._resolve_browser_executable(normalized_browser)
-            if executable:
-                try:
-                    subprocess.Popen([executable, url])
-                    logger.info("[AUTOMATION] Opened URL in native browser %s: %s", normalized_browser, url)
-                    return
-                except Exception as exc:
-                    logger.warning("[AUTOMATION] Native browser launch failed for %s: %s", normalized_browser, exc)
-        else:
-            try:
-                if webbrowser.open(url):
-                    logger.info("[AUTOMATION] Opened URL with system browser: %s", url)
-                    return
-            except Exception as exc:
-                logger.warning("[AUTOMATION] System browser open failed: %s", exc)
-
-        result = self.browser_control_service.execute("go_to", url=url)
-        if not bool(result.get("success")):
-            raise RuntimeError(str(result.get("message") or "Browser control failed."))
-        logger.info("[AUTOMATION] BrowserControlService opened URL: %s", url)
+        normalized_browser = self._normalize_target(browser).lower() if browser else None
+        self.local_app_connector.open_url(url, browser=normalized_browser)
 
     def _resolve_browser_process_name(self, browser: str) -> str | None:
         mapping = {
@@ -3625,45 +3584,10 @@ class AutomationService:
         return mapping.get(browser)
 
     def _is_process_running(self, executable_name: str) -> bool:
-        if not executable_name:
-            return False
-        try:
-            result = subprocess.run(
-                ["tasklist", "/FI", f"IMAGENAME eq {executable_name}"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except Exception:
-            return False
-
-        output = f"{result.stdout}\n{result.stderr}".lower()
-        return executable_name.lower() in output
+        return self.local_app_connector.is_process_running(executable_name)
 
     def _resolve_browser_executable(self, browser: str) -> str | None:
-        mapping = {
-            "chrome": "chrome.exe",
-            "google chrome": "chrome.exe",
-            "edge": "msedge.exe",
-            "microsoft edge": "msedge.exe",
-        }
-        executable_name = mapping.get(browser)
-        if not executable_name:
-            return None
-
-        for root in filter(None, [getattr(winreg, "HKEY_CURRENT_USER", None), getattr(winreg, "HKEY_LOCAL_MACHINE", None)]):
-            try:
-                with winreg.OpenKey(
-                    root,
-                    rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{executable_name}",
-                ) as key:
-                    value, _ = winreg.QueryValueEx(key, None)
-                    if value:
-                        return str(value)
-            except Exception:
-                continue
-
-        return executable_name
+        return self.local_app_connector.resolve_browser_executable(browser)
 
     def _sanitize_file_reference(self, path_text: str) -> str:
         cleaned = (path_text or "").strip().strip('"').strip("'")
@@ -4582,8 +4506,7 @@ class AutomationService:
             }
 
         try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source), str(destination))
+            self.local_files_connector.move(source, destination)
         except Exception as exc:
             return {
                 "success": False,
@@ -4753,109 +4676,22 @@ class AutomationService:
         return candidates
 
     def _direct_open_fallback(self, target: str) -> Dict[str, str | bool] | None:
-        normalized = re.sub(r"\s+", " ", (target or "").strip().lower())
-        browser_executable = self._resolve_browser_executable(normalized)
-        if browser_executable:
-            try:
-                subprocess.Popen([browser_executable])
-                logger.info("[AUTOMATION] Opened browser executable directly: %s", browser_executable)
-                return {
-                    "success": True,
-                    "action": "open",
-                    "message": f"Opening {target}.",
-                }
-            except Exception as exc:
-                return {
-                    "success": False,
-                    "action": "open",
-                    "message": f"I could not open {target}: {exc}",
-                }
-
-        uri = self.DIRECT_OPEN_URIS.get(normalized)
-        if uri:
-            try:
-                os.startfile(uri)
-                logger.info("[AUTOMATION] Opened direct URI target: %s", uri)
-                return {
-                    "success": True,
-                    "action": "open",
-                    "message": f"Opening {target}.",
-                }
-            except Exception as exc:
-                return {
-                    "success": False,
-                    "action": "open",
-                    "message": f"I could not open {target}: {exc}",
-                }
-
-        command = self.DIRECT_OPEN_COMMANDS.get(normalized)
-        if not command:
-            return None
-
-        try:
-            subprocess.Popen(command)
-            logger.info("[AUTOMATION] Opened direct command target: %s", command)
-            return {
-                "success": True,
-                "action": "open",
-                "message": f"Opening {target}.",
-            }
-        except Exception as exc:
-            return {
-                "success": False,
-                "action": "open",
-                "message": f"I could not open {target}: {exc}",
-            }
+        return self.local_app_connector.direct_open_fallback(
+            target,
+            direct_open_uris=self.DIRECT_OPEN_URIS,
+            direct_open_commands=self.DIRECT_OPEN_COMMANDS,
+        )
 
     def _direct_close_fallback(self, target: str) -> Dict[str, str | bool] | None:
-        normalized = re.sub(r"\s+", " ", (target or "").strip().lower())
-        executable = self.DIRECT_CLOSE_EXECUTABLES.get(normalized)
-        if not executable:
-            return None
-
-        try:
-            result = subprocess.run(
-                ["taskkill", "/IM", executable, "/F"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode != 0:
-                details = (result.stderr or result.stdout or "").strip() or "process not found"
-                return {
-                    "success": False,
-                    "action": "close",
-                    "message": f"I could not find an open app matching {target}: {details}",
-                }
-
-            logger.info("[AUTOMATION] Closed direct executable target: %s", executable)
-            return {
-                "success": True,
-                "action": "close",
-                "message": f"Closing {target}.",
-            }
-        except Exception as exc:
-            return {
-                "success": False,
-                "action": "close",
-                "message": f"I could not close {target}: {exc}",
-            }
+        return self.local_app_connector.direct_close_fallback(target, direct_close_executables=self.DIRECT_CLOSE_EXECUTABLES)
 
     def _appopener_unavailable(self, action: str) -> Dict[str, str | bool]:
-        message = "AppOpener is not available on this machine."
-        if APP_OPENER_IMPORT_ERROR is not None:
-            message = f"{message} Import error: {APP_OPENER_IMPORT_ERROR}"
-
-        return {
-            "success": False,
-            "action": action,
-            "message": message,
-        }
+        return self.local_app_connector.appopener_unavailable(action)
 
     def diagnostics(self) -> Dict[str, str | bool]:
         return {
             "appopener_available": self._appopener_available,
-            "appopener_error": "" if APP_OPENER_IMPORT_ERROR is None else str(APP_OPENER_IMPORT_ERROR),
+            "appopener_error": "" if self.local_app_connector.appopener_error is None else str(self.local_app_connector.appopener_error),
             "send2trash_available": send2trash is not None,
             "send2trash_error": "" if SEND2TRASH_IMPORT_ERROR is None else str(SEND2TRASH_IMPORT_ERROR),
         }
