@@ -45,9 +45,12 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
             script = handle.read()
 
         self.assertIn("class VoiceAudioQueue", script)
-        self.assertIn("scheduleThinkingSound(text, clientRequestId);", script)
+        self.assertIn("scheduleThinkingSound(data.activity.ack, clientRequestId);", script)
         self.assertIn("function scheduleThinkingSound(text, requestId = null)", script)
         self.assertIn("fetch(`${API}/tts/thinking`", script)
+        self.assertIn("text_hash: ack?.text_hash || ''", script)
+        self.assertIn("isThinkingAckCurrent(ack, turnId)", script)
+        self.assertIn("responseHash !== (ack?.text_hash || '')", script)
         self.assertIn("this.thinkingPlayedTurns = new Set();", script)
         self.assertIn("this.finalPlayedTurns = new Set();", script)
         self.assertIn("if (this.activeKind === 'thinking' && this.activeTurnId === turnId", script)
@@ -142,7 +145,7 @@ class BrowserStreamingUxSourceTests(unittest.TestCase):
 
         self.assertIn("function handleEmptyTranscript()", script)
         self.assertIn("cancelThinkingSound();", script)
-        self.assertIn("if ((error?.message || error) === 'empty_transcript')", script)
+        self.assertIn("['empty_transcript', 'empty_audio', 'no_speech', 'no_speech_detected'].includes", script)
         self.assertIn("handleEmptyTranscript();", script)
         self.assertIn("return false;", script)
 

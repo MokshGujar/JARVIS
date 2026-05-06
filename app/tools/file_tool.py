@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
+from app.utils.runtime_observability import log_boundary
 from app.services.automation_file_ops import move_to_recycle_bin
 from app.services.command_risk_service import CommandRiskService
 from app.services.automation_response import normalize_automation_response
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 try:
     from send2trash import send2trash
@@ -115,10 +119,12 @@ class FileTool(BaseTool):
 
     def execute(self, context: ToolContext) -> dict[str, Any]:
         planned_action = str(context.payload.get("action") or "").strip()
+        action_name = planned_action or "legacy_command"
         if planned_action:
             planned_result = self._execute_planned_action(planned_action, dict(context.payload.get("args") or {}))
             if planned_result is not None:
                 planned_result["tool_name"] = self.name
+                log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="native" if planned_action else "legacy_delegate", status="success" if planned_result.get("success") else "failed", target=planned_result.get("path") or "")
                 return planned_result
 
         operation = self.operation_for(context.command)
@@ -131,8 +137,11 @@ class FileTool(BaseTool):
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
             normalized["file_operation"] = operation
+            log_boundary(logger, "TOOL", name="FileTool", action=(operation or {}).get("operation") or action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=context.command)
             return normalized
-        return {"success": False, "action": "unsupported", "message": "File tool is not wired yet."}
+        result = {"success": False, "action": "unsupported", "message": "File tool is not wired yet."}
+        log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
+        return result
 
     def _execute_planned_action(self, action: str, args: dict[str, Any]) -> dict[str, Any] | None:
         if self.automation_bridge is None:
@@ -346,8 +355,11 @@ class FileTool(BaseTool):
         return normalize_automation_response(self.automation_bridge._list_files(str(args.get("folder") or args.get("location") or "downloads")))
 
     def _planned_search_files(self, args: dict[str, Any]) -> dict[str, Any]:
+        query = str(args.get("query") or "").strip()
+        if not query:
+            return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
         return normalize_automation_response(
-            self.automation_bridge._find_files(str(args.get("query") or ""), str(args.get("folder") or args.get("location") or "home"))
+            self.automation_bridge._find_files(query, str(args.get("folder") or args.get("location") or "home"))
         )
 
     def _planned_rename_file(self, args: dict[str, Any]) -> dict[str, Any]:

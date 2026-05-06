@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from app.utils.runtime_observability import log_boundary
 from app.services.automation_response import normalize_automation_response
 from app.services.command_risk_service import CommandRiskService
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class AppTool(BaseTool):
@@ -28,6 +32,7 @@ class AppTool(BaseTool):
 
     def execute(self, context: ToolContext, **kwargs: Any) -> dict[str, Any] | None:
         planned_action = str(context.payload.get("action") or "").strip()
+        action_name = planned_action or "legacy_command"
         if planned_action:
             args = dict(context.payload.get("args") or {})
             command = self._planned_command(planned_action, args)
@@ -39,8 +44,11 @@ class AppTool(BaseTool):
                     return None
                 normalized = normalize_automation_response(result)
                 normalized["tool_name"] = self.name
+                log_boundary(logger, "TOOL", name="AppTool", action=action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=command)
                 return normalized
-            return {"success": False, "action": planned_action, "message": "App tool is not wired yet."}
+            result = {"success": False, "action": planned_action, "message": "App tool is not wired yet."}
+            log_boundary(logger, "TOOL", name="AppTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
+            return result
 
         if self.automation_bridge and hasattr(self.automation_bridge, "_execute_app_launcher_command_legacy"):
             result = self.automation_bridge._execute_app_launcher_command_legacy(context.command)
@@ -48,8 +56,11 @@ class AppTool(BaseTool):
                 return None
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
+            log_boundary(logger, "TOOL", name="AppTool", action=action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=context.command)
             return normalized
-        return {"success": False, "action": "unsupported", "message": "App tool is not wired yet."}
+        result = {"success": False, "action": "unsupported", "message": "App tool is not wired yet."}
+        log_boundary(logger, "TOOL", name="AppTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
+        return result
 
     @staticmethod
     def _planned_command(action: str, args: dict[str, Any]) -> str | None:

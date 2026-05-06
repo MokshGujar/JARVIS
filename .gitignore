@@ -38,7 +38,10 @@ config/app/
 
 # Runtime data and generated artifacts
 database/chats_data/
+database/agent_tasks/
 database/camera_captures/
+database/face_identity/
+database/memory/
 database/observability/
 database/face_identity/verification_history.jsonl
 database/voice_identity/verification_history.jsonl
@@ -50,6 +53,7 @@ database/**/*.mp3
 
 # Test runtime scratch
 tests/_tmp/
+runtime/
 
 # Models / caches
 .cache/

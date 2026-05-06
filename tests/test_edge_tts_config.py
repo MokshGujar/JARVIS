@@ -166,7 +166,19 @@ class EdgeTtsConfigTests(unittest.TestCase):
                 },
             ),
         ):
-            response = asyncio.run(main_module.thinking_text_to_speech(SimpleNamespace(turn_id="turn-2", request_id="req-2")))
+            ack = main_module.acknowledgement_service.build_thinking_ack(turn_id="turn-2", text="On it.") if main_module.acknowledgement_service else {
+                "turn_id": "turn-2",
+                "type": "thinking",
+                "text": "On it.",
+                "tts_text": "On it.",
+                "should_display": True,
+                "should_speak": True,
+                "created_at": 0,
+                "expires_at": 9999999999,
+                "text_hash": "testhash",
+            }
+            main_module._register_thinking_ack(ack)
+            response = asyncio.run(main_module.thinking_text_to_speech(SimpleNamespace(turn_id="turn-2", request_id="req-2", text_hash=ack["text_hash"])))
             chunks = asyncio.run(_collect_stream(response))
 
         self.assertEqual(chunks, [b"audio"])
@@ -174,8 +186,17 @@ class EdgeTtsConfigTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Jarvis-Turn-Id"], "turn-2")
         self.assertEqual(response.headers["X-Jarvis-Request-Id"], "req-2")
         self.assertEqual(response.headers["X-Jarvis-Thinking-Phrase"], "On it.")
+        self.assertEqual(response.headers["X-Jarvis-Thinking-Hash"], ack["text_hash"])
         self.assertEqual(FakeCommunicate.last_call["text"], "On it.")
         self.assertEqual(FakeCommunicate.last_call["rate"], "+20%")
+
+    def test_thinking_tts_stale_turn_returns_empty_stream(self):
+        response = asyncio.run(main_module.thinking_text_to_speech(SimpleNamespace(turn_id="missing-turn", request_id="missing-turn", text_hash="hash")))
+        chunks = asyncio.run(_collect_stream(response))
+
+        self.assertEqual(chunks, [])
+        self.assertEqual(response.headers["X-Jarvis-Thinking-Status"], "stale")
+        self.assertEqual(response.headers["X-Jarvis-Thinking-Skip-Reason"], "missing_ack")
 
     def test_thinking_audio_default_phrase_pool_is_varied(self):
         config = main_module._thinking_audio_runtime_config()

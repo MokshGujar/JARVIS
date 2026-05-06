@@ -151,7 +151,10 @@ class AutomationContext:
     last_generated_text: str | None = None
     last_user_dictated_text: str | None = None
     last_assistant_response_text: str | None = None
+    current_subject: str | None = None
+    last_explicit_entity: str | None = None
     last_file_path: str | None = None
+    last_file_target: str | None = None
     last_created_file_path: str | None = None
     last_edited_file_path: str | None = None
     last_read_file_path: str | None = None
@@ -171,6 +174,8 @@ class AutomationContext:
     last_successful_action: dict[str, Any] | None = None
     last_failed_action: dict[str, Any] | None = None
     last_tool_used: str | None = None
+    last_tool_domain: str | None = None
+    last_tool_action: str | None = None
     last_plan_summary: str | None = None
     current_user_goal: str | None = None
     recent_action_fingerprints: list[ActionFingerprint] = field(default_factory=list)
@@ -198,6 +203,7 @@ class AutomationContext:
             self.last_file_path = action.file_path
         if action.query:
             self.last_browser_query = action.query
+            self.last_explicit_entity = action.query
         if action.url:
             self.last_opened_url = action.url
         if action.recipient or action.content:
@@ -226,6 +232,8 @@ class AutomationContext:
         app = resolved_args.get("app") or resolved_args.get("target")
 
         self.last_tool_used = tool_name or self.last_tool_used
+        self.last_tool_domain = tool_name or self.last_tool_domain
+        self.last_tool_action = action or self.last_tool_action
         if app and action in {"open", "app_open", "focus", "app_focus"}:
             self.previous_active_app = self.active_app
             self.active_app = str(app)
@@ -233,6 +241,7 @@ class AutomationContext:
             self.last_focused_app = str(app)
         if path:
             self.last_file_path = str(path)
+            self.last_file_target = str(path)
             if action == "create_file":
                 self.last_created_file_path = str(path)
             if action in {"write_file", "append_file", "move_file", "rename_file"}:
@@ -246,6 +255,7 @@ class AutomationContext:
                 self.current_document_context = self.current_document_context or {"app": self.active_app}
         if query:
             self.last_browser_query = str(query)
+            self.last_explicit_entity = str(query)
             self.last_search_engine = self.last_search_engine or "google"
             self.current_browser_context = {"query": str(query), "browser": self.active_app or self.last_browser}
         if url:

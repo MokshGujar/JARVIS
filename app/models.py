@@ -102,3 +102,4 @@ class TTSRequest(BaseModel):
 class ThinkingTTSRequest(BaseModel):
     turn_id: Optional[str] = None
     request_id: Optional[str] = None
+    text_hash: Optional[str] = None

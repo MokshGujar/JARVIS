@@ -818,6 +818,8 @@ async def chat_interrupt(request: Request):
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
     interrupted = interrupt_manager.interrupt(session_id, client_request_id)
+    if client_request_id:
+        _mark_turn_voice_state(client_request_id, cancelled=bool(interrupted), active=False)
     _warn_latency_budget("interrupt", int((time.perf_counter() - t0) * 1000), _INTERRUPT_WARN_MS)
     return {"status": "ok", "interrupted": interrupted}
 
@@ -1505,6 +1507,9 @@ _tts_request_generation = 0
 _thinking_tts_cache: dict[tuple[str, str, str, str, str], bytes] = {}
 _thinking_phrase_lock = threading.Lock()
 _last_thinking_phrase: str | None = None
+_thinking_ack_lock = threading.Lock()
+_thinking_ack_store: dict[str, dict[str, object]] = {}
+_turn_voice_state: dict[str, dict[str, object]] = {}
 _THINKING_START_DELAY_SECONDS = 0.4
 _ROUTING_WARN_MS = 20
 _ACK_WARN_MS = 100
@@ -1536,6 +1541,62 @@ def _select_thinking_phrase(
         if last_phrase_memory:
             _last_thinking_phrase = phrase
         return phrase
+
+
+def _register_thinking_ack(ack: dict[str, object]) -> dict[str, object]:
+    turn_id = str(ack.get("turn_id") or "").strip()
+    if not turn_id:
+        return ack
+    with _thinking_ack_lock:
+        _thinking_ack_store[turn_id] = dict(ack)
+        state = dict(_turn_voice_state.get(turn_id) or {})
+        state.update({"active": True, "thinking_tts_requested": False})
+        _turn_voice_state[turn_id] = state
+    logger.info(
+        "[ACK] turn_id=%s type=thinking text_hash=%s should_speak=%s",
+        turn_id,
+        ack.get("text_hash") or "",
+        bool(ack.get("should_speak", True)),
+    )
+    return ack
+
+
+def _mark_turn_voice_state(turn_id: str | None, **updates: object) -> None:
+    if not turn_id:
+        return
+    with _thinking_ack_lock:
+        state = dict(_turn_voice_state.get(str(turn_id)) or {})
+        state.update(updates)
+        _turn_voice_state[str(turn_id)] = state
+
+
+def _thinking_skip_response(
+    *,
+    turn_id: str,
+    request_id: str,
+    text_hash: str,
+    status: str,
+    reason: str,
+) -> StreamingResponse:
+    logger.info("[TTS_THINKING] turn_id=%s text_hash=%s status=%s reason=%s", turn_id, text_hash, status, reason)
+
+    async def generate():
+        if False:
+            yield b""
+
+    return StreamingResponse(
+        generate(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Jarvis-Audio-Type": "thinking",
+            "X-Jarvis-Turn-Id": turn_id,
+            "X-Jarvis-Request-Id": request_id,
+            "X-Jarvis-Thinking-Hash": text_hash,
+            "X-Jarvis-Thinking-Status": status,
+            "X-Jarvis-Thinking-Skip-Reason": reason,
+        },
+    )
 
 
 def _warn_latency_budget(label: str, elapsed_ms: int | float | None, budget_ms: int) -> None:
@@ -2130,7 +2191,23 @@ def _jarvis_realtime_pipeline(session_id: str, request: ChatRequest, interrupt_t
             yield text
             return
 
-        nonlocal_thinking = acknowledgement_service.phrase_generator.next_phrase()
+        turn_id = request.turn_id or request.client_request_id or getattr(interrupt_token, "client_request_id", None)
+        if hasattr(acknowledgement_service, "build_thinking_ack"):
+            thinking_ack = acknowledgement_service.build_thinking_ack(turn_id=turn_id or secrets.token_hex(8))
+        else:
+            phrase = acknowledgement_service.phrase_generator.next_phrase()
+            thinking_ack = {
+                "turn_id": turn_id or secrets.token_hex(8),
+                "type": "thinking",
+                "text": phrase,
+                "tts_text": phrase,
+                "should_display": True,
+                "should_speak": True,
+                "created_at": time.time(),
+                "expires_at": time.time() + 12,
+                "text_hash": secrets.token_hex(8),
+            }
+        _register_thinking_ack(thinking_ack)
         stream_iter = iter(chat_service.process_jarvis_message_stream(
             session_id,
             request.message,
@@ -2157,7 +2234,14 @@ def _jarvis_realtime_pipeline(session_id: str, request: ChatRequest, interrupt_t
                 if not thinking_started and time.perf_counter() >= thinking_deadline:
                     metrics.mark("thinking_start_ms")
                     thinking_started = True
-                    yield {"activity": {"event": "thinking", "state": "start", "message": nonlocal_thinking}}
+                    yield {
+                        "activity": {
+                            "event": "thinking",
+                            "state": "start",
+                            "message": thinking_ack["text"],
+                            "ack": thinking_ack,
+                        }
+                    }
                     yield _metrics_event(metrics)
 
         if first_chunk is stream_end:
@@ -2190,6 +2274,7 @@ def _jarvis_realtime_pipeline(session_id: str, request: ChatRequest, interrupt_t
             )
             if is_first_output:
                 first_output_marked = True
+                _mark_turn_voice_state(turn_id, final_started=True)
                 stop = thinking_stop()
                 if stop:
                     yield stop
@@ -2204,9 +2289,14 @@ def _jarvis_realtime_pipeline(session_id: str, request: ChatRequest, interrupt_t
         stop = thinking_stop()
         if stop:
             yield stop
+        _mark_turn_voice_state(turn_id, final_completed=True, active=False)
 
     finally:
-        pass
+        _mark_turn_voice_state(
+            request.turn_id or request.client_request_id or getattr(interrupt_token, "client_request_id", None),
+            active=False,
+            cancelled=bool(getattr(interrupt_token, "cancelled", False)),
+        )
 
 @app.post("/chat/jarvis/stream")
 async def chat_jarvis_stream(request: ChatRequest):
@@ -2330,8 +2420,24 @@ async def get_chat_history(session_id: str):
 async def stt_transcribe(request: Request):
     total_started = time.perf_counter()
     audio_bytes = await request.body()
+    def no_speech_response(reason: str, **extra: object) -> dict[str, object]:
+        return {
+            "success": False,
+            "status": "no_speech",
+            "error": "no_speech_detected",
+            "reason": reason,
+            "text": "",
+            "message": "",
+            "should_chat": False,
+            "should_play_thinking_tts": False,
+            "should_play_final_tts": False,
+            "should_interrupt": False,
+            "create_session_turn": False,
+            **extra,
+        }
+
     if not audio_bytes:
-        raise HTTPException(status_code=400, detail="empty_audio")
+        return no_speech_response("empty_audio")
 
     filename = str(request.headers.get("X-Audio-Filename") or "voice-command.wav").strip() or "voice-command.wav"
     content_type = str(request.headers.get("Content-Type") or "").strip().lower()
@@ -2403,6 +2509,8 @@ async def stt_transcribe(request: Request):
     )
     if not bool(result.get("success")):
         error = str(result.get("error") or "transcription_failed")
+        if error in {"empty_audio", "empty_transcript", "no_speech", "no_speech_detected"}:
+            return no_speech_response(error, **timing)
         if error in {"stt_provider_unavailable", "stt_dependency_missing", "cuda_unavailable"}:
             readiness = dict(result.get("provider_readiness") or {})
             if not readiness:
@@ -2419,9 +2527,12 @@ async def stt_transcribe(request: Request):
                 },
             )
         raise HTTPException(status_code=400, detail=error)
+    transcript = str(result.get("text") or "").strip()
+    if not transcript:
+        return no_speech_response("empty_transcript", **timing)
     return {
         "success": True,
-        "text": str(result.get("text") or ""),
+        "text": transcript,
         "message": str(result.get("message") or ""),
         "original_text": result.get("original_text"),
         "corrected_text": result.get("corrected_text") or result.get("text"),
@@ -2469,25 +2580,60 @@ async def thinking_text_to_speech(request: ThinkingTTSRequest | None = Body(defa
     if str(thinking_config.get("provider") or "edge_tts") != "edge_tts":
         raise HTTPException(status_code=503, detail="tts_provider_unavailable")
 
-    phrases = [str(item).strip() for item in thinking_config.get("phrases") or [] if str(item).strip()]
-    if not phrases:
-        raise HTTPException(status_code=400, detail="empty_text")
-    phrase = _select_thinking_phrase(
-        phrases,
-        randomize=bool(thinking_config.get("randomize", True)),
-        avoid_repeat=bool(thinking_config.get("avoid_repeat", True)),
-        last_phrase_memory=bool(thinking_config.get("last_phrase_memory", True)),
-    )
+    turn_id = str(getattr(request, "turn_id", None) or "").strip()
+    request_id = str(getattr(request, "request_id", None) or "").strip()
+    requested_hash = str(getattr(request, "text_hash", None) or "").strip()
+    ack: dict[str, object] | None = None
+    if turn_id:
+        with _thinking_ack_lock:
+            ack = dict(_thinking_ack_store.get(turn_id) or {})
+            state = dict(_turn_voice_state.get(turn_id) or {})
+            if not ack:
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="stale", reason="missing_ack")
+            if not bool(state.get("active", True)):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="stale", reason="inactive_turn")
+            if bool(state.get("cancelled")):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="skipped", reason="interrupted")
+            if bool(state.get("final_started")) or bool(state.get("final_completed")):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="skipped", reason="final_response_started")
+            if bool(state.get("no_speech")):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="skipped", reason="no_speech")
+            if bool(state.get("thinking_tts_requested")):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="skipped", reason="duplicate")
+            if requested_hash and requested_hash != str(ack.get("text_hash") or ""):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="stale", reason="hash_mismatch")
+            if float(ack.get("expires_at") or 0) <= time.time():
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=str(ack.get("text_hash") or requested_hash), status="stale", reason="expired")
+            if not bool(ack.get("should_speak", True)):
+                return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=str(ack.get("text_hash") or requested_hash), status="skipped", reason="ack_policy")
+            state["thinking_tts_requested"] = True
+            _turn_voice_state[turn_id] = state
+        phrase = str(ack.get("tts_text") or ack.get("text") or "").strip()
+    else:
+        phrases = [str(item).strip() for item in thinking_config.get("phrases") or [] if str(item).strip()]
+        if not phrases:
+            raise HTTPException(status_code=400, detail="empty_text")
+        phrase = _select_thinking_phrase(
+            phrases,
+            randomize=bool(thinking_config.get("randomize", True)),
+            avoid_repeat=bool(thinking_config.get("avoid_repeat", True)),
+            last_phrase_memory=bool(thinking_config.get("last_phrase_memory", True)),
+        )
+        requested_hash = ""
+    if not phrase:
+        return _thinking_skip_response(turn_id=turn_id, request_id=request_id, text_hash=requested_hash, status="skipped", reason="empty_text")
     voice = str(tts_config["voice"])
     rate = str(thinking_config.get("rate") or tts_config["rate"])
     volume = str(thinking_config.get("volume") or tts_config["volume"])
     pitch = str(tts_config["pitch"])
     cache_key = (phrase, voice, rate, volume, pitch)
+    logger.info("[TTS_THINKING] turn_id=%s text_hash=%s status=started reason=canonical_ack", turn_id, requested_hash or (ack or {}).get("text_hash") or "")
 
     async def generate():
         try:
             if bool(thinking_config.get("cache_enabled", True)) and cache_key in _thinking_tts_cache:
                 yield _thinking_tts_cache[cache_key]
+                logger.info("[TTS_THINKING] turn_id=%s text_hash=%s status=success reason=cache_hit", turn_id, requested_hash or (ack or {}).get("text_hash") or "")
                 return
             audio = await _edge_tts_bytes(
                 phrase,
@@ -2501,7 +2647,9 @@ async def thinking_text_to_speech(request: ThinkingTTSRequest | None = Body(defa
                 _thinking_tts_cache[cache_key] = audio
             if audio:
                 yield audio
+                logger.info("[TTS_THINKING] turn_id=%s text_hash=%s status=success reason=generated", turn_id, requested_hash or (ack or {}).get("text_hash") or "")
         except Exception as e:
+            logger.info("[TTS_THINKING] turn_id=%s text_hash=%s status=failed reason=tts_error", turn_id, requested_hash or (ack or {}).get("text_hash") or "")
             if bool(thinking_config.get("debug", False)):
                 logger.warning("[TTS thinking] Error generating thinking audio: %s", e)
 
@@ -2511,9 +2659,11 @@ async def thinking_text_to_speech(request: ThinkingTTSRequest | None = Body(defa
         headers={
             "Cache-Control": "no-cache",
             "X-Jarvis-Audio-Type": "thinking",
-            "X-Jarvis-Turn-Id": str(getattr(request, "turn_id", None) or ""),
-            "X-Jarvis-Request-Id": str(getattr(request, "request_id", None) or ""),
+            "X-Jarvis-Turn-Id": turn_id,
+            "X-Jarvis-Request-Id": request_id,
             "X-Jarvis-Thinking-Phrase": phrase,
+            "X-Jarvis-Thinking-Hash": requested_hash or str((ack or {}).get("text_hash") or ""),
+            "X-Jarvis-Thinking-Status": "started",
             "X-Jarvis-Duration-Estimate-Ms": str(min(int(thinking_config.get("max_duration_ms") or 1800), int(float(thinking_config.get("max_seconds") or 2.0) * 1000))),
         },
     )

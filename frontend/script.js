@@ -969,6 +969,11 @@ async function sendCapturedVoiceCommand() {
         }
         const voiceAudioBase64 = await finishVoiceCommandCapture();
         const payload = await transcribeCapturedVoiceAudio(voiceAudioBase64);
+        if (payload?.status === 'no_speech' || payload?.error === 'no_speech_detected') {
+            handleEmptyTranscript();
+            voiceSendInFlight = false;
+            return false;
+        }
         const transcript = String(payload?.text || '').trim();
         if (!transcript) {
             handleEmptyTranscript();
@@ -987,7 +992,7 @@ async function sendCapturedVoiceCommand() {
         return true;
     } catch (error) {
         voiceSendInFlight = false;
-        if ((error?.message || error) === 'empty_transcript') {
+        if (['empty_transcript', 'empty_audio', 'no_speech', 'no_speech_detected'].includes(String(error?.message || error))) {
             handleEmptyTranscript();
             voiceSendInFlight = false;
             return false;
@@ -1398,6 +1403,9 @@ class VoiceTurnManager {
         this.state = 'idle';
         this.interruptedTurnIds = new Set();
         this.interruptSentTurnIds = new Set();
+        this.finalStartedTurnIds = new Set();
+        this.finalCompletedTurnIds = new Set();
+        this.currentThinkingAck = null;
         this.lastInterruptAt = 0;
     }
 
@@ -1408,6 +1416,9 @@ class VoiceTurnManager {
         }
         this.activeTurnId = nextTurnId;
         this.interruptedTurnIds.delete(nextTurnId);
+        this.finalStartedTurnIds.delete(nextTurnId);
+        this.finalCompletedTurnIds.delete(nextTurnId);
+        this.currentThinkingAck = null;
         this.transition(state, nextTurnId);
         return nextTurnId;
     }
@@ -1418,6 +1429,34 @@ class VoiceTurnManager {
 
     isCurrent(turnId) {
         return !!turnId && this.activeTurnId === turnId && !this.interruptedTurnIds.has(turnId);
+    }
+
+    setThinkingAck(ack, turnId = this.activeTurnId) {
+        if (!ack || !this.isCurrent(turnId) || ack.turn_id !== turnId) return false;
+        this.currentThinkingAck = ack;
+        return true;
+    }
+
+    isThinkingAckCurrent(ack, turnId = this.activeTurnId) {
+        return !!(
+            ack &&
+            this.isCurrent(turnId) &&
+            this.currentThinkingAck &&
+            this.currentThinkingAck.turn_id === turnId &&
+            this.currentThinkingAck.text_hash === ack.text_hash &&
+            !this.finalStartedTurnIds.has(turnId) &&
+            !this.finalCompletedTurnIds.has(turnId)
+        );
+    }
+
+    markFinalStarted(turnId = this.activeTurnId) {
+        if (!turnId) return;
+        this.finalStartedTurnIds.add(turnId);
+    }
+
+    markFinalCompleted(turnId = this.activeTurnId) {
+        if (!turnId) return;
+        this.finalCompletedTurnIds.add(turnId);
     }
 
     transition(state, turnId = this.activeTurnId) {
@@ -1453,9 +1492,11 @@ class VoiceTurnManager {
 
     complete(turnId = this.activeTurnId) {
         if (turnId && this.activeTurnId && turnId !== this.activeTurnId) return;
+        this.markFinalCompleted(turnId);
         this.transition('idle', turnId);
         if (!isStreaming && !isAssistantAudioActive()) {
             this.activeTurnId = null;
+            this.currentThinkingAck = null;
         }
     }
 }
@@ -1479,14 +1520,17 @@ class VoiceAudioQueue {
         return !!(this.activeKind || this.pendingThinkingTimer);
     }
 
-    scheduleThinking(text, turnId) {
+    scheduleThinking(ackOrText, turnId) {
         clearTimeout(this.pendingThinkingTimer);
         this.pendingThinkingTimer = null;
-        if (!settings.thinkingSounds || shouldSkipThinkingAudioForText(text)) {
+        const ack = (ackOrText && typeof ackOrText === 'object') ? ackOrText : null;
+        const displayText = ack ? String(ack.text || '') : String(ackOrText || '');
+        const resolvedTurnId = (ack && ack.turn_id) || turnId || voiceTurnManager?.activeTurnId || activeClientRequestId || buildClientRequestId();
+        if (ack && !voiceTurnManager?.setThinkingAck(ack, resolvedTurnId)) return Promise.resolve();
+        if (!settings.thinkingSounds || !ack || ack.should_speak === false || shouldSkipThinkingAudioForText(displayText)) {
             console.debug(`[VOICE-STT] skipped_thinking reason=policy turn=${turnId || 'none'}`);
             return Promise.resolve();
         }
-        const resolvedTurnId = turnId || voiceTurnManager?.activeTurnId || activeClientRequestId || buildClientRequestId();
         if (thinkingAudioOnePerTurn && this.thinkingPlayedTurns.has(resolvedTurnId)) return Promise.resolve();
         if (!voiceTurnManager?.isCurrent(resolvedTurnId)) return Promise.resolve();
         voiceTurnManager.transition('thinking_pending', resolvedTurnId);
@@ -1494,13 +1538,14 @@ class VoiceAudioQueue {
         return new Promise(resolve => {
             this.pendingThinkingTimer = setTimeout(() => {
                 this.pendingThinkingTimer = null;
-                this.playThinking(resolvedTurnId).finally(resolve);
+                this.playThinking(resolvedTurnId, ack).finally(resolve);
             }, delay);
         });
     }
 
-    async playThinking(turnId) {
+    async playThinking(turnId, ack = null) {
         if (!voiceTurnManager?.isCurrent(turnId)) return;
+        if (!voiceTurnManager?.isThinkingAckCurrent(ack, turnId)) return;
         if (thinkingAudioOnePerTurn && this.thinkingPlayedTurns.has(turnId)) return;
         if (this.activeKind && !voiceAudioAllowOverlap) return;
         this.thinkingPlayedTurns.add(turnId);
@@ -1509,12 +1554,21 @@ class VoiceAudioQueue {
             const res = await fetch(`${API}/tts/thinking`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ turn_id: turnId, request_id: turnId }),
+                body: JSON.stringify({ turn_id: turnId, request_id: turnId, text_hash: ack?.text_hash || '' }),
                 signal: this.activeController.signal,
             });
             if (!res.ok) throw new Error('thinking_tts_failed');
+            const responseHash = res.headers.get('X-Jarvis-Thinking-Hash') || '';
+            const responseStatus = res.headers.get('X-Jarvis-Thinking-Status') || '';
             const buffer = await res.arrayBuffer();
-            if (!buffer || buffer.byteLength === 0 || !voiceTurnManager?.isCurrent(turnId)) return;
+            if (
+                responseStatus === 'skipped' ||
+                responseStatus === 'stale' ||
+                responseHash !== (ack?.text_hash || '') ||
+                !buffer ||
+                buffer.byteLength === 0 ||
+                !voiceTurnManager?.isThinkingAckCurrent(ack, turnId)
+            ) return;
             await this._playBuffer(buffer, turnId, 'thinking');
         } catch (_) {
             if (voiceTurnManager?.isCurrent(turnId)) voiceTurnManager.transition(isStreaming ? 'chat_streaming' : 'idle', turnId);
@@ -1536,6 +1590,7 @@ class VoiceAudioQueue {
         this.finalPlayedTurns.add(turnId);
         clearTimeout(this.pendingThinkingTimer);
         this.pendingThinkingTimer = null;
+        voiceTurnManager?.markFinalStarted(turnId);
         voiceTurnManager.transition('tts_pending', turnId);
         if (this.activeKind === 'thinking' && this.activeTurnId === turnId && !voiceAudioAllowOverlap) {
             if (thinkingAudioAllowFinishBeforeTts && thinkingAudioFinishBeforeFinalTts && !thinkingAudioStopOnFinalTts) {
@@ -1572,6 +1627,10 @@ class VoiceAudioQueue {
 
     _playBuffer(buffer, turnId, kind) {
         if (!voiceTurnManager?.isCurrent(turnId)) return Promise.resolve();
+        if (kind === 'thinking' && (
+            voiceTurnManager.finalStartedTurnIds.has(turnId) ||
+            voiceTurnManager.finalCompletedTurnIds.has(turnId)
+        )) return Promise.resolve();
         if (this.activeKind && !voiceAudioAllowOverlap) this.cancelActive('new_audio');
         const blob = new Blob([buffer], { type: 'audio/mpeg' });
         const url = URL.createObjectURL(blob);
@@ -4176,7 +4235,6 @@ async function sendVisionMessage(textOverride) {
     if (browserStreamSpeaker) browserStreamSpeaker.reset(clientRequestId);
     if (ttsPlayer) { ttsPlayer.reset(clientRequestId); ttsPlayer.unlock(); }
     if (preStarterPlayer) preStarterPlayer.unlock();
-    scheduleThinkingSound(text, clientRequestId);
     if (voiceTurnManager) voiceTurnManager.transition('chat_streaming', clientRequestId);
     maybeRestartListening(120);
     const controller = new AbortController();
@@ -4205,6 +4263,7 @@ async function sendVisionMessage(textOverride) {
                 imgbase64: imagePayload,
                 session_id: sessionId,
                 tts: false,
+                turn_id: clientRequestId,
                 client_request_id: clientRequestId,
             }),
             signal: controller.signal,
@@ -4236,6 +4295,9 @@ async function sendVisionMessage(textOverride) {
                 if (data.session_id) setChatSessionId(data.session_id);
                 if (data.activity) {
                     appendActivity(data.activity);
+                    if (data.activity.event === 'thinking' && data.activity.state === 'start' && data.activity.ack) {
+                        scheduleThinkingSound(data.activity.ack, clientRequestId);
+                    }
                     if (
                         data.activity.event === 'interrupted' ||
                         (!thinkingAudioFinishBeforeFinalTts && data.activity.event === 'thinking' && data.activity.state === 'stop')
@@ -4245,6 +4307,10 @@ async function sendVisionMessage(textOverride) {
                 }
                 if (data.error) throw new Error(data.error);
                 if (data.chunk) {
+                    if (!responseText) {
+                        voiceTurnManager?.markFinalStarted(clientRequestId);
+                        cancelThinkingSound(false);
+                    }
                     responseText += data.chunk;
                 }
                 if (data.done) {
@@ -4388,7 +4454,6 @@ async function sendMessage(textOverride, options = {}) {
     if (ttsPlayer) { ttsPlayer.reset(clientRequestId); ttsPlayer.unlock(); }
     if (preStarterPlayer) preStarterPlayer.unlock();
     cancelThinkingSound();
-    scheduleThinkingSound(text, clientRequestId);
     if (voiceTurnManager) voiceTurnManager.transition('chat_streaming', clientRequestId);
     maybeRestartListening(120);
 
@@ -4419,6 +4484,7 @@ async function sendMessage(textOverride, options = {}) {
                 tts: false,
                 input_source: options.inputSource || 'text',
                 voice_audio_base64: options.voiceAudioBase64 || null,
+                turn_id: clientRequestId,
                 client_request_id: clientRequestId,
             }),
             signal: controller.signal,
@@ -4475,6 +4541,10 @@ async function sendMessage(textOverride, options = {}) {
                     // ACTIVITY — Jarvis flow (query detected, decision, routing): show in left panel
                     if (data.activity) {
                         appendActivity(data.activity);
+                        if (data.activity.event === 'thinking' && data.activity.state === 'start' && data.activity.ack) {
+                            renderAckPlaceholder(contentEl, formatAckTextForDisplay(data.activity.ack.text || data.activity.message || ''));
+                            scheduleThinkingSound(data.activity.ack, clientRequestId);
+                        }
                         if (
                             data.activity.event === 'interrupted' ||
                             (!thinkingAudioFinishBeforeFinalTts && data.activity.event === 'thinking' && data.activity.state === 'stop')
@@ -4524,6 +4594,8 @@ async function sendMessage(textOverride, options = {}) {
                         // has chunk: "" for session_id
                         if (chunkText && !firstChunkReceived) {
                             firstChunkReceived = true;
+                            voiceTurnManager?.markFinalStarted(clientRequestId);
+                            cancelThinkingSound(false);
                             if (!isJarvisSpeakingOrStreaming()) setJarvisVisualState('idle');
                         }
                         fullResponse += chunkText;

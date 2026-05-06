@@ -575,7 +575,7 @@ class AutomationService:
         self._active_step_up_verified = bool(step_up_verified)
         try:
             previous_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
-            result = normalize_automation_response(self._execute_legacy(command))
+            result = normalize_automation_response(self._execute_facade(command))
             current_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
             self._clear_stale_confirmation_prompts(previous_confirmation_keys, current_confirmation_keys)
             result = self._dedupe_confirmation_prompt(result, session_id=session_id)
@@ -791,7 +791,7 @@ class AutomationService:
             }
         if self._looks_like_new_automation_command(lowered):
             self._pending_incomplete_command = None
-            return self._execute_legacy(reply)
+            return self._execute_facade(reply)
         template = str(pending.get("template") or "")
         if not template or not reply:
             return None
@@ -799,7 +799,7 @@ class AutomationService:
         if pending.get("kind") == "browser_search":
             browser = "chrome" if "chrome" in template.lower() else "edge" if "edge" in template.lower() else None
             return self._google_search(reply, browser=browser)
-        return self._execute_legacy(template.replace("{answer}", reply))
+        return self._execute_facade(template.replace("{answer}", reply))
 
     def _looks_like_new_automation_command(self, lowered: str) -> bool:
         return lowered.startswith(
@@ -817,7 +817,50 @@ class AutomationService:
             + self.RENAME_PREFIXES
         )
 
-    def _execute_legacy(self, command: str) -> Dict[str, str | bool]:
+    def _handle_subject_context_command(self, command: str) -> Dict[str, object] | None:
+        match = re.match(
+            r"^(?:change\s+(?:the\s+)?subject\s+to|change\s+topic\s+to|make\s+it\s+about|switch\s+topic\s+to|now\s+about|talk\s+about)\s+(.+?)[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        subject = match.group(1).strip()
+        if not subject:
+            return {"success": False, "action": "clarification_required", "message": "What subject should I use?"}
+        if self._active_automation_context is not None:
+            self._active_automation_context.current_subject = subject
+            self._active_automation_context.last_explicit_entity = subject
+            self._active_automation_context.touch()
+        return {"success": True, "action": "subject_updated", "message": f"Okay, I'll keep the subject as {subject}."}
+
+    def _rewrite_contextual_followup(self, command: str) -> str | Dict[str, object] | None:
+        lowered = command.strip().lower()
+        if re.match(
+            r"^(?:search\s+about\s+(?:him|her|it|this|that)(?:\s+again)?(?:\s+on\s+google)?|google\s+(?:him|her|it|this|that)|look\s+(?:him|her|it|this|that)\s+up)[.!?]*$",
+            lowered,
+            flags=re.IGNORECASE,
+        ):
+            context = self._active_automation_context
+            target = context.current_subject or context.last_explicit_entity or context.last_browser_query if context is not None else None
+            if not target:
+                return {"success": False, "action": "clarification_required", "message": "Who or what should I search for?"}
+            return f"search google for {target}"
+
+        file_followup = re.match(
+            r"^(?P<verb>put|append|write|add)\s+(?P<content>.+?)\s+(?:in|to)\s+it[.!?]*$",
+            command,
+            flags=re.IGNORECASE,
+        )
+        if file_followup:
+            context = self._active_automation_context
+            target = context.last_created_file_path or context.last_file_target or context.last_file_path if context is not None else None
+            if not target:
+                return {"success": False, "action": "clarification_required", "message": "Which file should I update?"}
+            return f"append {file_followup.group('content').strip()} to {target}"
+        return None
+
+    def _execute_facade(self, command: str) -> Dict[str, str | bool]:
         text = (command or "").strip()
         if not text:
             return {
@@ -828,6 +871,17 @@ class AutomationService:
 
         normalized_text = self._normalize_spoken_command(text)
         lowered = normalized_text.lower()
+
+        subject_result = self._handle_subject_context_command(normalized_text)
+        if subject_result is not None:
+            return subject_result
+
+        followup_result = self._rewrite_contextual_followup(normalized_text)
+        if isinstance(followup_result, dict):
+            return followup_result
+        if isinstance(followup_result, str) and followup_result:
+            normalized_text = followup_result
+            lowered = normalized_text.lower()
 
         dry_run_followup = self._handle_pending_dry_run_response(normalized_text)
         if dry_run_followup is not None:
@@ -894,6 +948,10 @@ class AutomationService:
         if create_plan_result is not None:
             return create_plan_result
 
+        canonical_result = self._execute_canonical_command(normalized_text)
+        if canonical_result is not None:
+            return canonical_result
+
         system_result = self._execute_system_tool(normalized_text)
         if system_result is not None:
             return system_result
@@ -921,6 +979,17 @@ class AutomationService:
         )
         if list_match:
             return self._list_files((list_match.group(1) or "downloads").strip())
+
+        search_files_match = re.match(
+            r"^(?:search\s+(?:my\s+)?files?|search\s+local\s+files?|look\s+in\s+my\s+files?)(?:\s+for\s+(.+?))?[.!?]*$",
+            normalized_text,
+            flags=re.IGNORECASE,
+        )
+        if search_files_match:
+            query = (search_files_match.group(1) or "").strip()
+            if not query:
+                return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
+            return self._find_files(query, "home")
 
         read_match = re.match(
             r"^(?:read|show|display)(?:\s+me)?\s+(?:the\s+)?(?:file|text\s+file)\s+(.+?)[.!?]*$",
@@ -1191,6 +1260,9 @@ class AutomationService:
             "message": "Automation supports opening and closing apps, play and search commands, system volume controls, and creating, editing, moving, renaming, and deleting files or folders across your laptop except protected system locations.",
         }
 
+    def _execute_legacy(self, command: str) -> Dict[str, str | bool]:
+        return self._execute_facade(command)
+
     def _build_automation_tool_registry(self) -> ToolRegistry:
         file_tool = FileTool(self)
         if not isinstance(getattr(file_tool, "name", None), str) or not str(getattr(file_tool, "name", "")).strip():
@@ -1203,9 +1275,36 @@ class AutomationService:
                 AppLauncherTool(self),
                 AppInteractionTool(),
                 SystemTool(self),
+                WhatsAppTool(self),
                 SummaryTool(),
             ]
         )
+
+    def _execute_canonical_command(self, command: str) -> Dict[str, object] | None:
+        registry = self._build_automation_tool_registry()
+        probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
+        route = probe_orchestrator.route(command)
+        if route is None:
+            return None
+        if not registry.contains(route.tool_name) and registry.by_intent(route.intent) is None:
+            return None
+        payload: dict[str, object] = {"turn_id": self._active_turn_id} if self._active_turn_id else {}
+        if self._active_automation_context is not None:
+            payload["automation_context"] = self._active_automation_context
+        orchestrator = MainOrchestrator(registry=registry, enforce_policy=True)
+        result = orchestrator.execute(
+            ToolContext(
+                command=command,
+                intent=route.intent,
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload=payload,
+                security_state={"step_up_verified": self._active_step_up_verified},
+            )
+        )
+        if route.tool_name == "file" and isinstance(result, dict) and result.get("action") == "confirmation_required":
+            self._stage_delete_target_for_confirmation(command)
+        return result
 
     def _execute_tool_with_orchestrator(self, command: str, *, expected_tool: str) -> Dict[str, str | bool] | None:
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
@@ -1469,6 +1568,7 @@ class AutomationService:
         return None
 
     def _execute_app_launcher_command_legacy(self, command: str) -> Dict[str, str | bool] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         normalized_text = self._normalize_spoken_command(command)
         lowered = normalized_text.lower()
 
@@ -1534,6 +1634,7 @@ class AutomationService:
         return None
 
     def _execute_system_command_legacy(self, command: str) -> Dict[str, str | bool] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         normalized_text = self._normalize_spoken_command(command)
         lowered = normalized_text.lower()
 
@@ -1551,6 +1652,7 @@ class AutomationService:
         return None
 
     def _execute_file_command_legacy(self, command: str, context=None) -> Dict[str, str | bool] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         normalized_text = self._normalize_spoken_command(command)
 
         path_request_match = re.match(
@@ -1568,6 +1670,17 @@ class AutomationService:
         )
         if list_match:
             return self._list_files((list_match.group(1) or "downloads").strip())
+
+        search_files_match = re.match(
+            r"^(?:search\s+(?:my\s+)?files?|search\s+local\s+files?|look\s+in\s+my\s+files?)(?:\s+for\s+(.+?))?[.!?]*$",
+            normalized_text,
+            flags=re.IGNORECASE,
+        )
+        if search_files_match:
+            query = (search_files_match.group(1) or "").strip()
+            if not query:
+                return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
+            return self._find_files(query, "home")
 
         read_match = re.match(
             r"^(?:read|show|display)(?:\s+me)?\s+(?:the\s+)?(?:file|text\s+file)\s+(.+?)[.!?]*$",
@@ -1741,15 +1854,50 @@ class AutomationService:
         if pending.get("kind") == "send_message":
             payload = dict(pending.get("payload") or {})
             if str(payload.get("platform") or "").lower() == "whatsapp":
-                if not isinstance(self.message_action_service, MessageActionService):
-                    return self.message_action_service.send(payload)
-                return self._send_whatsapp_message(payload)
+                return self._execute_confirmed_whatsapp_action("send_message", payload)
             return self.message_action_service.send(payload)
         if pending.get("kind") == "whatsapp_call":
-            return self._start_whatsapp_call(dict(pending.get("payload") or {}))
+            payload = dict(pending.get("payload") or {})
+            action = "start_video_call" if str(payload.get("mode") or "voice").lower() == "video" else "start_voice_call"
+            return self._execute_confirmed_whatsapp_action(action, payload)
         if pending.get("kind") == "game":
             return self.game_service.confirm(dict(pending.get("payload") or {}))
         return {"success": False, "action": "confirmation", "message": "That confirmation type is not supported."}
+
+    def _execute_confirmed_whatsapp_action(self, action: str, payload: dict[str, object]) -> Dict[str, object]:
+        executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)
+        return executor.execute(
+            ActionPlan(
+                original_text=self._whatsapp_pending_command(action, payload),
+                steps=[
+                    ActionStep(
+                        step_id="step1",
+                        tool_name="whatsapp",
+                        intent="whatsapp",
+                        action=action,
+                        args=dict(payload),
+                    )
+                ],
+                is_multistep=False,
+            ),
+            ToolContext(
+                command=self._whatsapp_pending_command(action, payload),
+                intent="whatsapp",
+                session_id=self._active_session_id,
+                request_id=self._active_turn_id,
+                payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                confirmation_state={"confirmed": True},
+                security_state={"step_up_verified": self._active_step_up_verified},
+            ),
+        )
+
+    @staticmethod
+    def _whatsapp_pending_command(action: str, payload: dict[str, object]) -> str:
+        if action == "send_message":
+            return f"send whatsapp message to {payload.get('receiver') or 'contact'}"
+        if action == "start_video_call":
+            return f"video call {payload.get('contact') or 'contact'} on whatsapp"
+        return f"voice call {payload.get('contact') or 'contact'} on whatsapp"
 
     def _looks_like_whatsapp_command(self, lowered: str) -> bool:
         return bool(
@@ -1762,6 +1910,7 @@ class AutomationService:
         return WhatsAppTool(self).execute(ToolContext(command=command, intent="whatsapp"))
 
     def _execute_whatsapp_command_legacy(self, command: str) -> Dict[str, object] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         text = self._normalize_spoken_command(command)
         lowered = text.lower().strip()
 
@@ -1770,6 +1919,35 @@ class AutomationService:
 
         if re.match(r"^open\s+whatsapp(?:\s+desktop)?[.!?]*$", lowered) or lowered == "whatsapp desktop":
             return self._open_whatsapp_desktop_or_web()
+
+        open_call_match = re.match(
+            r"^open\s+whatsapp(?:\s+(?:desktop|web))?\s+and\s+(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)[.!?]*$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if open_call_match:
+            opened = self._open_whatsapp_desktop_or_web()
+            if not opened.get("success"):
+                return opened
+            mode = "video" if "video" in open_call_match.group("mode").lower() else "voice"
+            contact = self._clean_whatsapp_contact(open_call_match.group("contact"))
+            if self._is_ambiguous_communication_contact(contact):
+                prompt = self._whatsapp_contact_required_result("whatsapp_call", {"mode": mode})
+                prompt["actions"] = list(opened.get("actions") or []) + list(prompt.get("actions") or [])
+                return prompt
+            pending = self._prepare_whatsapp_call_confirmation(mode, contact)
+            if pending.get("action") == "whatsapp_call_pending":
+                return {
+                    **pending,
+                    "action": "multi_action",
+                    "message": f"{opened.get('message')} {pending.get('message')}",
+                    "display_text": f"{opened.get('message')} {pending.get('message')}",
+                    "actions": list(opened.get("actions") or []) + list(pending.get("actions") or []),
+                    "pending": pending.get("pending"),
+                }
+            if isinstance(pending, dict):
+                pending["actions"] = list(opened.get("actions") or []) + list(pending.get("actions") or [])
+            return pending
 
         match = re.match(r"^(?:search\s+contact\s+in\s+whatsapp|whatsapp\s+search)\s+(.+?)[.!?]*$", text, flags=re.IGNORECASE)
         if match:
@@ -1824,6 +2002,7 @@ class AutomationService:
     def _extract_whatsapp_call_intent(self, command: str) -> dict[str, str] | None:
         text = self._normalize_spoken_command(command).strip()
         patterns = (
+            r"^(?:tell\s+jarvis\s+to\s+)(?:whatsapp\s+)?(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)(?:\s+(?:on|via|using)\s+whatsapp)?[.!?]*$",
             r"^(?:whatsapp\s+)?(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)(?:\s+(?:on|via|using)\s+whatsapp)?[.!?]*$",
             r"^(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)\s+(?:on|via|using)\s+whatsapp[.!?]*$",
         )
@@ -2320,10 +2499,12 @@ class AutomationService:
         return self._execute_browser_tool(command)
 
     def _execute_browser_control_legacy(self, command: str) -> Dict[str, str | bool] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         tool = BrowserTool(BrowserConnector(self.browser_control_service))
         return tool.execute(ToolContext(command=command, intent="browser"))
 
     def _execute_browser_command_legacy(self, command: str, context=None) -> Dict[str, str | bool] | None:
+        # LEGACY DELEGATE: Only tool classes may call this. Do not call from planners/services.
         normalized_text = self._normalize_spoken_command(command)
         lowered = normalized_text.lower()
 

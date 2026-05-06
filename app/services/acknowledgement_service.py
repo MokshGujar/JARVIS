@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import random
 import re
+import time
 from collections import deque
 
 
@@ -31,6 +33,30 @@ class DynamicPhraseGenerator:
 class AcknowledgementService:
     def __init__(self, phrase_generator: DynamicPhraseGenerator | None = None) -> None:
         self.phrase_generator = phrase_generator or DynamicPhraseGenerator()
+
+    def build_thinking_ack(
+        self,
+        *,
+        turn_id: str,
+        text: str | None = None,
+        should_display: bool = True,
+        should_speak: bool = True,
+        ttl_seconds: float = 12.0,
+    ) -> dict:
+        phrase = str(text or self.phrase_generator.next_phrase()).strip()
+        now = time.time()
+        text_hash = hashlib.sha256(f"{turn_id}:{phrase}".encode("utf-8")).hexdigest()[:16]
+        return {
+            "turn_id": turn_id,
+            "type": "thinking",
+            "text": phrase,
+            "tts_text": phrase,
+            "should_display": bool(should_display),
+            "should_speak": bool(should_speak),
+            "created_at": now,
+            "expires_at": now + max(1.0, float(ttl_seconds or 12.0)),
+            "text_hash": text_hash,
+        }
 
     def build_ack(self, route, *, message: str = "") -> str:
         intent = getattr(route, "intent", "") or ""

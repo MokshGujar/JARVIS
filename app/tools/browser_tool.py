@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from app.connectors.browser_connector import BrowserConnector
+from app.utils.runtime_observability import log_boundary
 from app.services.automation_response import normalize_automation_response
 from app.services.command_risk_service import CommandRiskService
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class BrowserTool(BaseTool):
@@ -51,10 +55,13 @@ class BrowserTool(BaseTool):
 
     def execute(self, context: ToolContext) -> dict[str, Any] | None:
         planned_action = str(context.payload.get("action") or "").strip()
+        action_name = planned_action or "legacy_command"
         if planned_action:
             planned_result = self._execute_planned_action(planned_action, dict(context.payload.get("args") or {}), context=context)
             if planned_result is not None:
                 planned_result["tool_name"] = self.name
+                delegate = "legacy_delegate" if self.automation_bridge is not None else "connector"
+                log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate=delegate, status="success" if planned_result.get("success") else "failed", target=planned_result.get("query") or planned_result.get("url") or "")
                 return planned_result
 
         if self.automation_bridge and hasattr(self.automation_bridge, "_execute_browser_command_legacy"):
@@ -63,15 +70,20 @@ class BrowserTool(BaseTool):
                 return None
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
+            log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=context.command)
             return normalized
 
         if self.connector is None:
-            return {"success": False, "action": "unsupported", "message": "Browser tool is not wired yet."}
+            result = {"success": False, "action": "unsupported", "message": "Browser tool is not wired yet."}
+            log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate="connector", status="failed", target="")
+            return result
 
         command = context.command or ""
         match = re.match(r"^(?:browser search|search browser|search in browser)\s+(.+?)[.!?]*$", command, flags=re.IGNORECASE)
         if match:
-            return self.connector.execute("search", query=match.group(1).strip(), engine="google")
+            result = self.connector.execute("search", query=match.group(1).strip(), engine="google")
+            log_boundary(logger, "TOOL", name="BrowserTool", action="search", delegate="connector", status="success" if result.get("success") else "failed", target=match.group(1).strip())
+            return result
 
         match = re.match(r"^(?:open url|go to|browser open|browser go to)\s+(.+?)[.!?]*$", command, flags=re.IGNORECASE)
         if match:

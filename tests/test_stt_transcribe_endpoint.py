@@ -107,15 +107,40 @@ class STTTranscribeEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(FakeSTTTool.calls, 1)
 
-    def test_stt_transcribe_empty_audio_fails_cleanly(self):
+    def test_stt_transcribe_blank_transcript_returns_no_speech(self):
+        class BlankTool(FakeSTTTool):
+            def execute(self, context, **kwargs):
+                payload = super().execute(context, **kwargs)
+                payload["text"] = "   "
+                payload["message"] = ""
+                return payload
+
+        with patch.object(main, "STTTool", return_value=BlankTool()):
+            response = self.client.post(
+                "/stt/transcribe",
+                headers={"Content-Type": "audio/wav", "X-Audio-Filename": "voice.wav"},
+                content=b"RIFFfakewav",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "no_speech")
+        self.assertFalse(payload["should_chat"])
+
+    def test_stt_transcribe_empty_audio_returns_no_speech(self):
         response = self.client.post(
             "/stt/transcribe",
             headers={"Content-Type": "audio/wav", "X-Audio-Filename": "voice.wav"},
             content=b"",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["detail"], "empty_audio")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["status"], "no_speech")
+        self.assertEqual(payload["error"], "no_speech_detected")
+        self.assertFalse(payload["should_chat"])
+        self.assertFalse(payload["should_play_thinking_tts"])
 
     def test_stt_transcribe_unsupported_format_fails_cleanly(self):
         with patch.object(main, "_ffmpeg_available", return_value=False):

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.intent_router import IntentRouter, RouteDecision
+from app.utils.runtime_observability import log_boundary
 from app.orchestrator.scenario_policy import ScenarioPolicy
 from app.orchestrator.semantic_planner_adapter import SemanticPlannerAdapter
 from app.orchestrator.task_planner import TaskPlanner
 from app.orchestrator.tool_executor import ToolExecutor
 from app.orchestrator.tool_registry import ToolRegistry
 from app.tools.base import ToolContext
+
+logger = logging.getLogger(__name__)
 
 
 class MainOrchestrator:
@@ -40,6 +44,7 @@ class MainOrchestrator:
 
     def execute(self, context: ToolContext) -> dict[str, Any] | None:
         automation_context = self._automation_context(context)
+        log_boundary(logger, "ORCHESTRATOR", command=context.command, route="start", domain="", intent=context.intent, tool="", action="", status="planned")
         confirmation_response = self.semantic_adapter.try_confirmation_response(
             context.command,
             context=automation_context,
@@ -54,6 +59,13 @@ class MainOrchestrator:
         )
         if dry_run_response is not None:
             return dry_run_response
+
+        route = self.route(context.command)
+        if route is not None and (
+            route.tool_name == "whatsapp"
+            or (route.tool_name == "file" and route.operation == "search_files")
+        ):
+            return self._execute_route(route, context)
 
         semantic_result = self.semantic_adapter.try_live_result(
             context.command,
@@ -79,11 +91,27 @@ class MainOrchestrator:
             )
             return executor.execute(plan, context)
 
-        route = self.route(context.command)
+        route = route or self.route(context.command)
         if route is None:
+            log_boundary(logger, "ORCHESTRATOR", command=context.command, route="none", domain="", intent="", tool="", action="", status="blocked")
             return None
 
+        return self._execute_route(route, context)
+
+    def _execute_route(self, route: RouteDecision, context: ToolContext) -> dict[str, Any]:
+        log_boundary(
+            logger,
+            "ORCHESTRATOR",
+            command=context.command,
+            route=route.scenario,
+            domain=route.category,
+            intent=route.intent,
+            tool=route.tool_name,
+            action=route.operation,
+            status="executing",
+        )
         if not self.registry.contains(route.tool_name) and self.registry.by_intent(route.intent) is None:
+            log_boundary(logger, "ORCHESTRATOR", command=context.command, route=route.scenario, domain=route.category, intent=route.intent, tool=route.tool_name, action=route.operation, status="blocked")
             return {
                 "success": False,
                 "action": "tool_not_found",
@@ -113,6 +141,7 @@ class MainOrchestrator:
         if isinstance(result, dict):
             result.setdefault("selected_tool", route.tool_name)
             result.setdefault("scenario", route.scenario)
+            log_boundary(logger, "ORCHESTRATOR", command=context.command, route=route.scenario, domain=route.category, intent=route.intent, tool=route.tool_name, action=route.operation, status="complete" if result.get("success") else "blocked")
         return result
 
     def execute_text(self, user_text: str, **context_kwargs: Any) -> dict[str, Any] | None:

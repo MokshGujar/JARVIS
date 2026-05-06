@@ -8,6 +8,7 @@ from typing import Any
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.automation_context import ActionFingerprint
 from app.orchestrator.intent_router import RouteDecision
+from app.utils.runtime_observability import log_boundary
 from app.orchestrator.scenario_policy import ScenarioPolicy
 from app.orchestrator.tool_registry import ToolRegistry
 from app.policy.models import PolicyDecision as CorePolicyDecision
@@ -57,6 +58,7 @@ class ToolExecutor:
             try:
                 tool = self.registry.by_name(step.tool_name)
             except KeyError:
+                log_boundary(logger, "TOOL_REGISTRY", tool=step.tool_name, action=step.action, status="missing")
                 message = f"No tool is registered for planned step {step.step_id}: {step.tool_name}."
                 logger.debug("Missing tool for step %s: %s", step.step_id, step.tool_name)
                 audit_id = self._record_audit(
@@ -79,6 +81,7 @@ class ToolExecutor:
 
             metadata = self._metadata_for_step(step)
             if metadata is None:
+                log_boundary(logger, "TOOL_REGISTRY", tool=step.tool_name, action=step.action, status="invalid_metadata")
                 message = f"No executable metadata is registered for planned step {step.step_id}: {step.tool_name}."
                 audit_id = self._record_audit(
                     context,
@@ -101,10 +104,20 @@ class ToolExecutor:
             resolved_args = self._resolve_args(step.args, step_outputs)
             policy_args = self._policy_args(tool, step.action, resolved_args, context)
             policy_decision = self.policy_engine.evaluate(step.tool_name, step.action, policy_args, context, metadata=metadata)
+            log_boundary(
+                logger,
+                "POLICY",
+                tool=step.tool_name,
+                action=step.action,
+                risk=policy_decision.risk_level.value,
+                decision=policy_decision.decision.value,
+                reason=policy_decision.reason,
+            )
             if self.enforce_policy:
                 self._record_policy_decision(policy_decision, metadata)
             policy_block = self._policy_block(step, context, policy_decision, metadata, plan, resolved_args)
             if policy_block is not None:
+                log_boundary(logger, "TOOL_EXECUTOR", tool=step.tool_name, action=step.action, status="blocked", policy_decision=policy_decision.decision.value)
                 logger.debug("Policy blocked step %s: %s", step.step_id, policy_block)
                 return self._final_result(
                     plan,
@@ -117,6 +130,7 @@ class ToolExecutor:
                 )
 
             logger.debug("Step started: %s %s.%s", step.step_id, step.tool_name, step.action)
+            log_boundary(logger, "TOOL_EXECUTOR", tool=step.tool_name, action=step.action, status="started", policy_decision=policy_decision.decision.value)
             tool_payload = {
                 **context.payload,
                 "planned_step": step.as_dict(),
@@ -142,6 +156,7 @@ class ToolExecutor:
             )
 
             result = normalize_tool_result(tool.execute(tool_context), default_action=step.action)
+            log_boundary(logger, "TOOL_EXECUTOR", tool=step.tool_name, action=step.action, status="success" if result.get("success") else "failed", policy_decision=policy_decision.decision.value)
             result["step_id"] = step.step_id
             result["selected_tool"] = step.tool_name
             result["planned_action"] = step.action
@@ -537,6 +552,8 @@ class ToolExecutor:
         failed_step: ActionStep | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        selected_tool = failed_step.tool_name if failed_step is not None else plan.steps[0].tool_name if len(plan.steps) == 1 else "tool_executor"
+        scenario = f"{selected_tool}.{failed_step.action}" if failed_step is not None else f"{plan.steps[0].tool_name}.{plan.steps[0].action}" if len(plan.steps) == 1 else "task.multistep"
         result: dict[str, Any] = {
             "success": success,
             "action": action,
@@ -544,8 +561,8 @@ class ToolExecutor:
             "display_text": message,
             "spoken_text": message,
             "tool_name": "tool_executor",
-            "selected_tool": "tool_executor",
-            "scenario": "task.multistep",
+            "selected_tool": selected_tool,
+            "scenario": scenario,
             "is_multistep": True,
             "plan": plan.as_dict(),
             "steps": [step.as_dict() for step in plan.steps],
@@ -570,7 +587,7 @@ class ToolExecutor:
             if plan.metadata.get("semantic_execution"):
                 result["semantic_execution"] = True
                 result["semantic_actions"] = list(plan.metadata.get("semantic_actions") or [])
-        if not plan.is_multistep and len(step_results) == 1 and success:
+        if not plan.is_multistep and len(step_results) == 1:
             single = dict(step_results[0])
             single.setdefault("plan", plan.as_dict())
             single.setdefault("steps", [step.as_dict() for step in plan.steps])

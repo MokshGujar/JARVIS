@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Iterable
 
 from app.policy.models import RoutingMode, ToolMetadata, ToolRiskLevel, ToolStatus
+from app.utils.runtime_observability import log_boundary
 from app.tools.base import AutomationTool
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_tool_name(name: str) -> str:
@@ -58,8 +62,18 @@ class ToolRegistry:
     def metadata_for(self, name: str) -> ToolMetadata:
         registered_name = self._name_index.get(_normalize_tool_name(name))
         if registered_name is None:
+            log_boundary(logger, "TOOL_REGISTRY", tool=name, action="", status="missing")
             raise KeyError(f"Tool metadata is not registered: {name}")
-        return self._metadata[registered_name]
+        metadata = self._metadata[registered_name]
+        status = "resolved"
+        if metadata.status == ToolStatus.DISABLED or metadata.routing_mode == RoutingMode.DISABLED:
+            status = "disabled"
+        elif metadata.status == ToolStatus.PLANNED:
+            status = "unsupported"
+        elif metadata.routing_mode in {RoutingMode.METADATA_ONLY, RoutingMode.HIDDEN}:
+            status = "invalid_metadata"
+        log_boundary(logger, "TOOL_REGISTRY", tool=registered_name, action="", status=status)
+        return metadata
 
     def is_live_active(self, name: str, action: str) -> bool:
         return self.metadata_for(name).allows_execution(action)
