@@ -72,6 +72,43 @@ class CoreExecutorEnforcementTests(unittest.TestCase):
         self.assertEqual(result["action"], "confirmation_required")
         self.assertEqual(tool.calls, 0)
 
+    def test_confirmation_id_must_be_accepted_before_execution(self):
+        tool = FakeTool("file")
+        registry = ToolRegistry([tool])
+        executor = self._executor(registry)
+        plan = ActionPlan("write file", [ActionStep("step1", "file", "file", "write_file", {"path": "a.txt"})])
+
+        blocked = executor.execute(plan, ToolContext(command="write file", session_id="s1", request_id="t4a"))
+        confirmation_id = blocked["confirmation_id"]
+        still_blocked = executor.execute(
+            plan,
+            ToolContext(command="write file", session_id="s1", request_id="t4b", confirmation_state={"confirmation_id": confirmation_id}),
+        )
+        self.store.accept_confirmation(confirmation_id)
+        allowed = executor.execute(
+            plan,
+            ToolContext(command="write file", session_id="s1", request_id="t4c", confirmation_state={"confirmation_id": confirmation_id}),
+        )
+
+        self.assertEqual(still_blocked["action"], "confirmation_required")
+        self.assertTrue(allowed["success"])
+        self.assertEqual(tool.calls, 1)
+
+    def test_pending_confirmation_persists_resolved_args_for_replay(self):
+        tool = FakeTool("file")
+        result = self._executor(ToolRegistry([tool])).execute(
+            ActionPlan(
+                "write file",
+                [ActionStep("step1", "file", "file", "write_file", {"path": "{step0.path}", "content": "hello"})],
+            ),
+            ToolContext(command="write file", session_id="s1", request_id="t4d"),
+        )
+
+        pending = self.store.get_confirmation(result["confirmation_id"])
+
+        self.assertEqual(pending["metadata"]["resolved_args"]["content"], "hello")
+        self.assertIn("expires_at", pending["metadata"])
+
     def test_allowed_live_tool_executes_and_records_audit(self):
         tool = FakeTool("app")
         result = self._executor(ToolRegistry([tool])).execute(

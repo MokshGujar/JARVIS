@@ -252,6 +252,11 @@ class AutomationResponseFormatter:
         return bool(
             "ToolResult(" in message
             or "Traceback" in message
+            or re.search(r"\bautomation supports\b", message, re.I)
+            or re.search(r"\bsupported automation commands\b", message, re.I)
+            or re.search(r"\bsemantic failed\b", message, re.I)
+            or re.search(r"\bpolicy (?:denied|blocked|decision|engine|jargon)\b", message, re.I)
+            or re.search(r"\binternal policy\b", message, re.I)
             or re.search(r"\b[A-Z][A-Z0-9]+_[A-Z0-9_]+\b", message)
             or re.search(r"confirmation_id\s*=", message)
             or re.search(r"^\s*[\{\[]", message)

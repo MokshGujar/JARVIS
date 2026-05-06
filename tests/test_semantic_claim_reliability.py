@@ -1,7 +1,7 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from app.orchestrator.automation_context import AutomationContext
 from app.orchestrator.main_orchestrator import MainOrchestrator
@@ -10,6 +10,7 @@ from app.orchestrator.smart_automation_planner import SmartAutomationPlanner
 from app.orchestrator.tool_registry import ToolRegistry
 from app.services import automation_service as automation_module
 from app.services.automation_service import AutomationService
+from app.tools.app_tool import AppTool
 from app.tools.base import ToolContext
 from app.tools.file_tool import FileTool
 
@@ -61,6 +62,34 @@ class SemanticClaimReliabilityTests(unittest.TestCase):
         self.assertEqual([action.intent.value for action in result.semantic_actions], ["CREATE_FILE", "WRITE_FILE"])
         self.assertIn("wake_word_removed", result.corrections_applied)
         self.assertIn("filler_removed", result.corrections_applied)
+
+    def test_trailing_wake_word_open_calculator_is_semantic_open_app_claim(self):
+        result = _planner().plan("open calculator Jarvis", context=AutomationContext(session_id="s1"), dry_run=False)
+
+        self.assertEqual(result.corrected_text, "open calculator")
+        self.assertEqual([action.intent.value for action in result.semantic_actions], ["OPEN_APP"])
+        self.assertEqual(result.semantic_actions[0].app, "calculator")
+
+    def test_semantic_open_calculator_does_not_send_jarvis_to_legacy_app_opener(self):
+        bridge = Mock()
+        bridge._execute_app_launcher_command_legacy.return_value = {
+            "success": True,
+            "action": "open",
+            "message": "Opening Calculator.",
+        }
+        result = MainOrchestrator(
+            registry=ToolRegistry([AppTool(bridge)]),
+            semantic_adapter=SemanticPlannerAdapter(
+                smart_automation_enabled=True,
+                semantic_planner_enabled=True,
+                safe_execution_enabled=True,
+            ),
+            enforce_policy=True,
+        ).execute(ToolContext(command="open calculator Jarvis", payload={"automation_context": AutomationContext(session_id="s1")}))
+
+        self.assertTrue(result["success"])
+        bridge._execute_app_launcher_command_legacy.assert_called_once_with("open calculator")
+        self.assertNotIn("calculator jarvis", bridge._execute_app_launcher_command_legacy.call_args.args[0].lower())
 
     def test_file_create_write_executes_semantic_file_tool_and_updates_context(self):
         root = Path(__file__).resolve().parent / "_tmp" / "semantic_claim_create"

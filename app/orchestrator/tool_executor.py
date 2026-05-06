@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from app.orchestrator.action_plan import ActionPlan, ActionStep
@@ -102,7 +103,7 @@ class ToolExecutor:
             policy_decision = self.policy_engine.evaluate(step.tool_name, step.action, policy_args, context, metadata=metadata)
             if self.enforce_policy:
                 self._record_policy_decision(policy_decision, metadata)
-            policy_block = self._policy_block(step, context, policy_decision, metadata, plan)
+            policy_block = self._policy_block(step, context, policy_decision, metadata, plan, resolved_args)
             if policy_block is not None:
                 logger.debug("Policy blocked step %s: %s", step.step_id, policy_block)
                 return self._final_result(
@@ -144,6 +145,7 @@ class ToolExecutor:
             result["step_id"] = step.step_id
             result["selected_tool"] = step.tool_name
             result["planned_action"] = step.action
+            result["scenario"] = f"{step.tool_name}.{step.action}"
             result["resolved_args"] = resolved_args
             result["tool_metadata"] = metadata.as_dict()
             result["policy"] = {
@@ -193,6 +195,7 @@ class ToolExecutor:
         decision: CorePolicyDecision,
         metadata: ToolMetadata,
         plan: ActionPlan,
+        resolved_args: dict[str, Any],
     ) -> dict[str, Any] | None:
         step.safety_level = decision.risk_level.value
         step.requires_confirmation = decision.requires_confirmation
@@ -201,7 +204,7 @@ class ToolExecutor:
         if not self.enforce_policy:
             return None
 
-        confirmed = bool(context.confirmation_state.get("confirmed") or context.payload.get("confirmed"))
+        confirmed = self._confirmation_approved(context)
         step_up_verified = self._step_up_verified(context)
         if decision.decision == PolicyDecisionType.DENY:
             unavailable = decision.reason in {
@@ -246,7 +249,7 @@ class ToolExecutor:
             ).as_dict()
 
         if decision.requires_confirmation and not confirmed:
-            confirmation_id = self._create_confirmation(context, step, plan, decision, metadata)
+            confirmation_id = self._create_confirmation(context, step, plan, decision, metadata, resolved_args)
             audit_id = self._record_audit(
                 context,
                 step,
@@ -362,6 +365,7 @@ class ToolExecutor:
         plan: ActionPlan,
         decision: CorePolicyDecision,
         metadata: ToolMetadata,
+        resolved_args: dict[str, Any],
     ) -> str | None:
         try:
             return self.audit_store.create_pending_confirmation(
@@ -374,11 +378,30 @@ class ToolExecutor:
                     "policy": decision.as_dict(),
                     "tool_metadata": metadata.as_dict(),
                     "args": dict(step.args or {}),
+                    "resolved_args": dict(resolved_args or {}),
+                    "expires_at": time.time() + 300,
                 },
             )
         except Exception:
             logger.debug("Could not create pending confirmation", exc_info=True)
             return None
+
+    def _confirmation_approved(self, context: ToolContext) -> bool:
+        confirmation_id = (
+            context.confirmation_state.get("confirmation_id")
+            or context.payload.get("confirmation_id")
+            or context.metadata.get("confirmation_id")
+        )
+        if confirmation_id:
+            try:
+                confirmation = self.audit_store.get_confirmation(str(confirmation_id))
+            except Exception:
+                logger.debug("Could not read confirmation state", exc_info=True)
+                confirmation = None
+            if confirmation is None:
+                return False
+            return str(confirmation.get("status") or "").lower() == "accepted"
+        return bool(context.confirmation_state.get("confirmed") or context.payload.get("confirmed"))
 
     def _record_execution(
         self,
@@ -551,6 +574,11 @@ class ToolExecutor:
             single = dict(step_results[0])
             single.setdefault("plan", plan.as_dict())
             single.setdefault("steps", [step.as_dict() for step in plan.steps])
+            if plan.metadata:
+                single.setdefault("metadata", dict(plan.metadata))
+                if plan.metadata.get("semantic_execution"):
+                    single["semantic_execution"] = True
+                    single["semantic_actions"] = list(plan.metadata.get("semantic_actions") or [])
             return single
         return result
 

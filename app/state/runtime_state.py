@@ -212,6 +212,7 @@ class RuntimeStateStore:
 
     def get_pending_confirmation(self, *, session_id: str | None, turn_id: str | None = None) -> dict[str, Any] | None:
         self.ensure_schema()
+        self.expire_pending_confirmations()
         clauses = ["status='pending'"]
         values: list[Any] = []
         if session_id is not None:
@@ -224,6 +225,44 @@ class RuntimeStateStore:
         with self.connect() as connection:
             row = connection.execute(query, values).fetchone()
         return _row_dict(row) if row is not None else None
+
+    def get_confirmation(self, confirmation_id: str) -> dict[str, Any] | None:
+        self.ensure_schema()
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM confirmations WHERE confirmation_id=?", (confirmation_id,)).fetchone()
+        return _row_dict(row) if row is not None else None
+
+    def accept_confirmation(self, confirmation_id: str) -> None:
+        self.resolve_confirmation(confirmation_id, status="accepted")
+
+    def cancel_confirmation(self, confirmation_id: str) -> None:
+        self.resolve_confirmation(confirmation_id, status="cancelled")
+
+    def expire_confirmation(self, confirmation_id: str) -> None:
+        self.resolve_confirmation(confirmation_id, status="expired")
+
+    def expire_pending_confirmations(self) -> int:
+        self.ensure_schema()
+        now = time.time()
+        expired_ids: list[str] = []
+        with self.connect() as connection:
+            rows = connection.execute("SELECT confirmation_id, metadata_json FROM confirmations WHERE status='pending'").fetchall()
+            for row in rows:
+                metadata = _loads_json(row["metadata_json"])
+                expires_at = metadata.get("expires_at")
+                try:
+                    should_expire = expires_at is not None and float(expires_at) <= now
+                except Exception:
+                    should_expire = False
+                if should_expire:
+                    expired_ids.append(str(row["confirmation_id"]))
+            if expired_ids:
+                connection.executemany(
+                    "UPDATE confirmations SET status='expired', updated_at=? WHERE confirmation_id=? AND status='pending'",
+                    [(_now(), confirmation_id) for confirmation_id in expired_ids],
+                )
+                connection.commit()
+        return len(expired_ids)
 
     def resolve_confirmation(self, confirmation_id: str, *, status: str) -> None:
         normalized = str(status or "").strip().lower()
@@ -359,8 +398,13 @@ def _row_dict(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     metadata = result.get("metadata_json")
     if isinstance(metadata, str):
-        try:
-            result["metadata"] = json.loads(metadata)
-        except Exception:
-            result["metadata"] = {}
+        result["metadata"] = _loads_json(metadata)
     return result
+
+
+def _loads_json(value: str) -> dict[str, Any]:
+    try:
+        loaded = json.loads(value)
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}

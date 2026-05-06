@@ -104,7 +104,7 @@ class PolicyEngine:
                     turn_id,
                     requires_confirmation=True,
                 )
-            return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "app_control_default_allow", normalized_tool, normalized_action, session_id, turn_id)
+            return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.HIGH, "unknown_app_action_denied", normalized_tool, normalized_action, session_id, turn_id)
 
         if normalized_tool == "browser":
             if normalized_action in self.BROWSER_ALLOW_ACTIONS:
@@ -113,7 +113,7 @@ class PolicyEngine:
                 return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.HIGH, "browser_interaction_requires_confirmation", normalized_tool, normalized_action, session_id, turn_id, requires_confirmation=True)
             if normalized_action in {"form_submit", "submit"}:
                 return self._decision(PolicyDecisionType.CONFIRM, ToolRiskLevel.HIGH, "browser_submit_requires_confirmation", normalized_tool, normalized_action, session_id, turn_id, requires_confirmation=True)
-            return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "browser_default_allow", normalized_tool, normalized_action, session_id, turn_id)
+            return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.HIGH, "unknown_browser_action_denied", normalized_tool, normalized_action, session_id, turn_id)
 
         if normalized_tool == "system":
             if normalized_action in self.SYSTEM_READ_ACTIONS:
@@ -160,7 +160,7 @@ class PolicyEngine:
                 return self._decision(PolicyDecisionType.CONFIRM, metadata.risk_level, "tool_metadata_requires_confirmation", normalized_tool, normalized_action, session_id, turn_id, requires_confirmation=True)
             return self._decision(PolicyDecisionType.ALLOW, metadata.risk_level, "tool_metadata_allows", normalized_tool, normalized_action, session_id, turn_id)
 
-        return self._decision(PolicyDecisionType.ALLOW, ToolRiskLevel.LOW, "default_low_risk", normalized_tool, normalized_action, session_id, turn_id)
+        return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.HIGH, "unknown_tool_or_metadata_missing", normalized_tool, normalized_action, session_id, turn_id)
 
     def _evaluate_file(
         self,

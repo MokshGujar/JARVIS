@@ -123,6 +123,8 @@ class ToolOrchestratorArchitectureTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["selected_tool"], "app")
         self.assertEqual(result["scenario"], "app.open")
+        self.assertEqual(result["policy"]["decision"], "ALLOW")
+        self.assertTrue(result.get("semantic_execution"))
         bridge._execute_app_launcher_command_legacy.assert_called_once()
 
     def test_main_orchestrator_selects_system_tool(self):

@@ -31,6 +31,25 @@ temp/
 database/*.sqlite
 database/*.sqlite3
 database/*.sqlite3.bak
+*.zip
+
+# Generated config/code shadows
+config/app/
+
+# Runtime data and generated artifacts
+database/chats_data/
+database/camera_captures/
+database/observability/
+database/face_identity/verification_history.jsonl
+database/voice_identity/verification_history.jsonl
+database/**/*.jpg
+database/**/*.jpeg
+database/**/*.png
+database/**/*.wav
+database/**/*.mp3
+
+# Test runtime scratch
+tests/_tmp/
 
 # Models / caches
 .cache/

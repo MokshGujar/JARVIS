@@ -4,12 +4,12 @@ from typing import Any
 
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.intent_router import IntentRouter, RouteDecision
-from app.orchestrator.scenario_policy import PolicyDecision, ScenarioPolicy
+from app.orchestrator.scenario_policy import ScenarioPolicy
 from app.orchestrator.semantic_planner_adapter import SemanticPlannerAdapter
 from app.orchestrator.task_planner import TaskPlanner
 from app.orchestrator.tool_executor import ToolExecutor
 from app.orchestrator.tool_registry import ToolRegistry
-from app.tools.base import ToolContext, ToolResult, normalize_tool_result
+from app.tools.base import ToolContext
 
 
 class MainOrchestrator:
@@ -146,43 +146,3 @@ class MainOrchestrator:
         if payload_context is not None:
             return payload_context
         return context.metadata.get("automation_context")
-
-    def _policy_block(self, context: ToolContext, route: RouteDecision, policy: PolicyDecision) -> dict[str, Any] | None:
-        confirmed = bool(context.confirmation_state.get("confirmed") or context.payload.get("confirmed"))
-        voice_permission_granted = bool(
-            context.security_state.get("voice_permission_granted")
-            or context.payload.get("voice_permission_granted")
-        )
-
-        if policy.requires_confirmation and not confirmed:
-            return ToolResult(
-                success=False,
-                tool_name=route.tool_name,
-                message="Confirmation is required before I can run that action.",
-                requires_followup=True,
-                requires_confirmation=True,
-                requires_face_step_up=policy.requires_face_step_up,
-                data={
-                    "action": "confirmation_required",
-                    "scenario": route.scenario,
-                    "requires_voice_permission": policy.requires_voice_permission,
-                },
-            ).as_dict()
-
-        if policy.requires_voice_permission and not voice_permission_granted:
-            return ToolResult(
-                success=False,
-                tool_name=route.tool_name,
-                message="Voice permission is required before I can run that protected action.",
-                requires_followup=True,
-                requires_confirmation=False,
-                requires_face_step_up=False,
-                data={
-                    "action": "auth_required",
-                    "scenario": route.scenario,
-                    "auth": {"voice_permission_required": True, "protected_action": True},
-                    "requires_voice_permission": True,
-                },
-            ).as_dict()
-
-        return None

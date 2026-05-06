@@ -85,7 +85,7 @@ class SemanticActionMapper:
         plan = ActionPlan(
             original_text=corrected_text or original_text,
             steps=steps,
-            is_multistep=True,
+            is_multistep=len(steps) > 1,
             requires_confirmation=any(step.requires_confirmation for step in steps),
             requires_face_step_up=any(step.requires_face_step_up for step in steps),
             requires_voice_permission=any(step.requires_voice_permission for step in steps),

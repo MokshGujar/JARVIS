@@ -157,9 +157,45 @@ def _app_context(tokens: set[str]) -> bool:
 
 
 def _strip_wake_words(text: str) -> tuple[str, bool]:
-    variants = r"(?:jarvis|javis|jawis|jais|jarwis|jarvish)"
-    updated = re.sub(rf"^\s*(?:hello|hey|hi)?\s*{variants}[,\s]+", "", str(text or ""), flags=re.I)
-    return updated, updated != text
+    original = str(text or "")
+    variants = r"(?:jarvis|javis|jawis|jais|jarwis|jarvish|jarris|jaris|jervis|javi|javier)"
+    updated = re.sub(rf"^\s*(?:hello|hey|hi)?\s*{variants}\b[,\s]*", "", original, flags=re.I)
+    updated = re.sub(rf"^\s*(?:hello|hey|hi)\s+{variants}\b[,\s]*", "", updated, flags=re.I)
+    if _allows_trailing_wake_word_strip(updated):
+        updated = re.sub(rf"[\s,]+{variants}[.!?]*\s*$", "", updated, flags=re.I)
+    return updated, updated != original
+
+
+def _allows_trailing_wake_word_strip(text: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", str(text or "").strip()).strip(" .!?")
+    if not cleaned:
+        return False
+    command_prefixes = (
+        "open",
+        "launch",
+        "start",
+        "close",
+        "focus",
+        "switch to",
+        "search",
+        "google",
+        "look up",
+        "create",
+        "make",
+        "save",
+        "put",
+        "write",
+        "add",
+        "append",
+        "delete",
+        "remove",
+        "read",
+        "list",
+        "show",
+        "check",
+        "take",
+    )
+    return cleaned.lower().startswith(command_prefixes)
 
 
 def _strip_request_fillers(text: str) -> tuple[str, bool]:

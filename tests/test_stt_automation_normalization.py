@@ -50,6 +50,21 @@ class STTAutomationNormalizationTests(unittest.TestCase):
         self.assertIn("wake_word_removed", result.corrections_applied)
         self.assertIn("filler_removed", result.corrections_applied)
 
+    def test_trailing_wake_word_is_removed_for_command_invocation(self):
+        for command in ("open calculator Jarvis", "open calculator Javis", "Jarvis open calculator"):
+            with self.subTest(command=command):
+                result = normalize_automation_command(command)
+
+                self.assertEqual(result.corrected_text, "open calculator")
+                self.assertIn("wake_word_removed", result.corrections_applied)
+
+    def test_wake_word_inside_file_name_or_content_is_preserved(self):
+        filename = normalize_automation_command("create file named Jarvis notes")
+        content = normalize_automation_command("write Jarvis in the file")
+
+        self.assertEqual(filename.corrected_text, "create file named Jarvis notes")
+        self.assertEqual(content.corrected_text, "write Jarvis in the file")
+
     def test_file_context_corrects_wald_and_port_without_fuzzy_chat_rewrite(self):
         corrected = normalize_automation_command("I'll put wald in it", context={"domain": "file"})
         unchanged = normalize_automation_command("the wald is fictional")

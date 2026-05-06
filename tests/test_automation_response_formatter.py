@@ -102,6 +102,32 @@ class AutomationResponseFormatterTests(unittest.TestCase):
         self.assertNotIn("SEND_MESSAGE_AFTER_CONFIRMATION", raw["message"])
         self.assertNotIn("ToolResult", tool_result["message"])
 
+    def test_response_formatter_hides_user_facing_leak_blacklist(self):
+        blocked_terms = (
+            "automation supports opening and closing apps",
+            "supported automation commands: open, close",
+            "ToolResult(success=False)",
+            "SEND_MESSAGE_AFTER_CONFIRMATION",
+            "Traceback (most recent call last)",
+            '{"success": false}',
+            "semantic failed",
+            "internal policy decision denied",
+        )
+
+        for message in blocked_terms:
+            with self.subTest(message=message):
+                result = normalize_automation_response({"success": False, "action": "unsupported", "message": message})
+
+                lowered = result["message"].lower()
+                self.assertNotIn("automation supports", lowered)
+                self.assertNotIn("supported automation commands", lowered)
+                self.assertNotIn("toolresult", lowered)
+                self.assertNotIn("send_message_after_confirmation", lowered)
+                self.assertNotIn("traceback", lowered)
+                self.assertFalse(result["message"].lstrip().startswith("{"))
+                self.assertNotIn("semantic failed", lowered)
+                self.assertNotIn("policy decision", lowered)
+
     def test_tool_unavailable_and_dependency_failure_are_natural(self):
         missing = normalize_automation_response({"success": False, "action": "tool_not_found", "message": "No tool is registered for planned step step1: terminal."})
         dependency = normalize_automation_response({"success": False, "action": "dependency_failed", "message": "Step step3 could not run because step2 failed."})

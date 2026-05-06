@@ -34,6 +34,25 @@ class CorePolicyEngineTests(unittest.TestCase):
         self.assertEqual(self.engine.evaluate("meta", "read", {}, metadata=metadata_only).decision, PolicyDecisionType.DENY)
         self.assertEqual(self.engine.evaluate("off", "run", {}, metadata=disabled).decision, PolicyDecisionType.DENY)
 
+    def test_unknown_tools_and_unknown_actions_are_denied(self):
+        self.assertEqual(self.engine.evaluate("unknown_tool", "open", {}).decision, PolicyDecisionType.DENY)
+        self.assertEqual(self.engine.evaluate("app", "install", {"app": "demo"}).decision, PolicyDecisionType.DENY)
+        self.assertEqual(self.engine.evaluate("browser", "execute_script", {}).decision, PolicyDecisionType.DENY)
+
+    def test_metadata_action_allowlist_is_authoritative(self):
+        metadata = ToolMetadata(
+            "partial",
+            "ui_automation",
+            ToolStatus.PARTIAL,
+            RoutingMode.ACTIVE,
+            ToolRiskLevel.MEDIUM,
+            allowed_actions=("read_window_title", "click_coordinates"),
+            safe_partial_actions=("read_window_title",),
+        )
+
+        self.assertEqual(self.engine.evaluate("partial", "read_window_title", {}, metadata=metadata).decision, PolicyDecisionType.ALLOW)
+        self.assertEqual(self.engine.evaluate("partial", "click_coordinates", {}, metadata=metadata).decision, PolicyDecisionType.DENY)
+
 
 if __name__ == "__main__":
     unittest.main()

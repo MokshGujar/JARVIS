@@ -21,6 +21,7 @@ from app.services.contact_match_service import ContactCandidate, ContactMatchSer
 from app.services.game_service import GameService
 from app.services.message_action_service import MessageActionService
 from app.services.automation_response import normalize_automation_response
+from app.services.automation_path_aliases import build_user_path_aliases
 from app.services.safe_command_info_service import SafeCommandInfoService
 from app.services.youtube_tools_service import YouTubeToolsService
 from app.services.whatsapp_desktop_automation import WhatsAppDesktopAutomation
@@ -69,38 +70,6 @@ except Exception:
 
 
 logger = logging.getLogger("J.A.R.V.I.S")
-
-
-def _read_windows_shell_folder(value_name: str, default: Path) -> Path:
-    if winreg is None:
-        return default
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
-        ) as key:
-            value, _ = winreg.QueryValueEx(key, value_name)
-            expanded = os.path.expandvars(str(value))
-            candidate = Path(expanded)
-            if candidate.exists():
-                return candidate
-    except Exception:
-        pass
-    return default
-
-
-def _build_user_path_aliases() -> dict[str, Path]:
-    home = Path.home()
-    onedrive = home / "OneDrive"
-    return {
-        "desktop": _read_windows_shell_folder("Desktop", onedrive / "Desktop" if (onedrive / "Desktop").exists() else home / "Desktop"),
-        "documents": _read_windows_shell_folder("Personal", onedrive / "Documents" if (onedrive / "Documents").exists() else home / "Documents"),
-        "downloads": _read_windows_shell_folder("{374DE290-123F-4565-9164-39C4925E467B}", home / "Downloads"),
-        "home": home,
-        "music": _read_windows_shell_folder("My Music", onedrive / "Music" if (onedrive / "Music").exists() else home / "Music"),
-        "pictures": _read_windows_shell_folder("My Pictures", onedrive / "Pictures" if (onedrive / "Pictures").exists() else home / "Pictures"),
-        "videos": _read_windows_shell_folder("My Video", onedrive / "Videos" if (onedrive / "Videos").exists() else home / "Videos"),
-    }
 
 
 class AutomationService:
@@ -318,7 +287,7 @@ class AutomationService:
         "group policy",
     }
 
-    USER_PATH_ALIASES = _build_user_path_aliases()
+    USER_PATH_ALIASES = build_user_path_aliases()
 
     def __init__(self, groq_service=None):
         self._appopener_available = appopener_open is not None and appopener_close is not None

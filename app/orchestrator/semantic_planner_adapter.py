@@ -52,6 +52,9 @@ LIVE_FILE_INTENTS = {
     SemanticAutomationIntent.SAVE_CONTENT_AS_FILE,
 }
 LIVE_SAFE_SEMANTIC_INTENTS = {
+    SemanticAutomationIntent.OPEN_APP,
+    SemanticAutomationIntent.FOCUS_APP,
+    SemanticAutomationIntent.SWITCH_APP,
     SemanticAutomationIntent.SEARCH_WEB,
     SemanticAutomationIntent.SEARCH_VISIBLE_BROWSER,
     SemanticAutomationIntent.REPLACE_ADDRESS_OR_SEARCH,
