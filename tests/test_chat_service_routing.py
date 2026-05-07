@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 import app.services.chat_service as chat_module
 from app.services.chat_service import ChatService
@@ -76,6 +77,36 @@ class ChatServiceRoutingTests(unittest.TestCase):
 
         self.assertTrue(any(chunk == {"activity": {"event": "routing", "route": "phone"}} for chunk in chunks))
         self.assertTrue(any(isinstance(chunk, str) and "What should I say to suhani?" in chunk for chunk in chunks))
+
+    def test_subject_setting_routes_to_automation_before_general_brain(self):
+        automation = Mock()
+        automation.has_pending_open_clarification.return_value = False
+        automation.has_pending_browser_search.return_value = False
+        automation.has_pending_create_file_location.return_value = False
+        automation.looks_like_automation_request.return_value = True
+        automation.execute.return_value = {"success": True, "action": "subject_updated", "message": "Okay."}
+        service = ChatService(groq_service=Mock(), automation_service=automation)
+
+        chunks = list(service.process_jarvis_message_stream("subject-test", "Change the subject to MS Zoni."))
+
+        self.assertTrue(any(chunk == {"activity": {"event": "routing", "route": "automation"}} for chunk in chunks))
+        automation.execute.assert_called_once()
+        service.groq_service.stream_response.assert_not_called()
+
+    def test_system_status_routes_to_automation_before_general_brain(self):
+        automation = Mock()
+        automation.has_pending_open_clarification.return_value = False
+        automation.has_pending_browser_search.return_value = False
+        automation.has_pending_create_file_location.return_value = False
+        automation.looks_like_automation_request.return_value = True
+        automation.execute.return_value = {"success": True, "action": "safe_command_info", "message": "System OK"}
+        service = ChatService(groq_service=Mock(), automation_service=automation)
+
+        chunks = list(service.process_jarvis_message_stream("system-test", "Show system status"))
+
+        self.assertTrue(any(chunk == {"activity": {"event": "routing", "route": "automation"}} for chunk in chunks))
+        automation.execute.assert_called_once()
+        service.groq_service.stream_response.assert_not_called()
 
 
 if __name__ == "__main__":

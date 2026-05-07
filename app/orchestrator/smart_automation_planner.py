@@ -95,6 +95,7 @@ class SmartAutomationPlanner:
     }
     NON_MUTATING_INTENTS = {
         SemanticAutomationIntent.SEARCH_WEB,
+        SemanticAutomationIntent.SEARCH_FILES,
         SemanticAutomationIntent.READ_ACTIVE_WINDOW,
         SemanticAutomationIntent.READ_SCREEN_OR_WINDOW,
         SemanticAutomationIntent.SYSTEM_STATUS,
@@ -158,7 +159,7 @@ class SmartAutomationPlanner:
         lowered = self._clean(text)
         if re.search(r"\b(message|tell|send|call|whatsapp)\b", lowered):
             return AutomationDomain.COMMUNICATION
-        if re.search(r"\b(file|folder|desktop|documents|delete it|rename|move)\b", lowered):
+        if re.search(r"\b(file|files|folder|desktop|documents|delete it|rename|move)\b", lowered):
             return AutomationDomain.FILE
         if re.search(r"\b(search|google|look up|chrome|edge|website|tab|go back|refresh)\b", lowered):
             return AutomationDomain.BROWSER
@@ -281,6 +282,19 @@ class SmartAutomationPlanner:
                 )
             ]
 
+        explicit_web = re.match(r"^(?:search (?:the )?(?:web|internet|online) for|search google for|google for|google search|search about) (?P<query>.+?)(?: on google)?$", cleaned)
+        if explicit_web:
+            return [
+                self._action(
+                    SemanticAutomationIntent.SEARCH_WEB,
+                    AutomationDomain.BROWSER,
+                    AutomationMode.DIRECT_TOOL,
+                    query=self._normalize_browser_query(explicit_web.group("query")),
+                    preferred_tool="browser",
+                    fallback_tool="app_interaction",
+                )
+            ]
+
         search = re.match(r"^(?:search|google|look up)(?: for)? (?P<query>.+?)(?: on google)?$", cleaned)
         if search:
             return [
@@ -288,7 +302,7 @@ class SmartAutomationPlanner:
                     SemanticAutomationIntent.SEARCH_WEB,
                     AutomationDomain.BROWSER,
                     AutomationMode.DIRECT_TOOL,
-                    query=self._strip_filler(search.group("query")),
+                    query=self._normalize_browser_query(search.group("query")),
                     preferred_tool="browser",
                     fallback_tool="app_interaction",
                 )
@@ -321,6 +335,24 @@ class SmartAutomationPlanner:
         return []
 
     def _plan_file_request(self, cleaned: str, original: str, context: AutomationContext | None) -> list[SemanticAutomationAction]:
+        search_files = re.match(
+            r"^(?:search (?:my )?files?|search local files?|look in my files?)(?: for (?P<query>.+))?$",
+            cleaned,
+        )
+        if search_files:
+            query = self._strip_filler(search_files.group("query") or "")
+            return [
+                self._action(
+                    SemanticAutomationIntent.SEARCH_FILES,
+                    AutomationDomain.FILE,
+                    AutomationMode.DIRECT_TOOL,
+                    query=query or None,
+                    preferred_tool="file",
+                    missing_fields=[] if query else ["file_search_query"],
+                    metadata={"missing_query": not bool(query)},
+                )
+            ]
+
         save_content = re.match(
             r"^save (?P<content>.+?) as (?P<name>.+?)(?: on (?P<location>(?:my )?desktop|documents|downloads|home))?$",
             cleaned,
@@ -667,6 +699,7 @@ class SmartAutomationPlanner:
         }.items() if value is not None}
         mapping: dict[SemanticAutomationIntent, list[tuple[str, str, str]]] = {
             SemanticAutomationIntent.SEARCH_WEB: [("browser", "browser_search", "search")],
+            SemanticAutomationIntent.SEARCH_FILES: [("file", "file", "search_files")],
             SemanticAutomationIntent.SEARCH_VISIBLE_BROWSER: [("app", "app_open", "open"), ("app_interaction", "select_address_bar", "select_address_bar"), ("app_interaction", "replace_current_field", "replace_current_field"), ("app_interaction", "submit_current_field", "submit_current_field")],
             SemanticAutomationIntent.OPEN_NEW_TAB: [("app_interaction", "open_new_tab", "open_new_tab")],
             SemanticAutomationIntent.REPLACE_ADDRESS_OR_SEARCH: [("browser", "browser_search", "search")],
@@ -781,6 +814,7 @@ class SmartAutomationPlanner:
             "file_name": "What should I name it?",
             "location": "Where should I save it?",
             "search_query": "What should I search?",
+            "file_search_query": "What file name or content should I search for?",
             "recipient": "Who should I send it to?",
             "message_draft": "Should I send it now?",
             "file": "Which file should I use?",
@@ -823,6 +857,19 @@ class SmartAutomationPlanner:
     @staticmethod
     def _strip_filler(value: str) -> str:
         return re.sub(r"\s+", " ", str(value or "").strip()).strip(" .!?")
+
+    def _normalize_browser_query(self, value: str | None) -> str:
+        query = self._strip_filler(value or "")
+        previous = None
+        while query and query.lower() != previous:
+            previous = query.lower()
+            query = re.sub(
+                r"^(?:search\s+google\s+for|google\s+for|search\s+(?:the\s+)?(?:web|internet|online)\s+for|search\s+about)\s+",
+                "",
+                query,
+                flags=re.I,
+            ).strip(" .!?")
+        return query
 
     @staticmethod
     def _title_name(value: str) -> str:

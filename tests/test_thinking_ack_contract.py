@@ -61,6 +61,25 @@ class ThinkingAckContractTests(unittest.TestCase):
         self.assertEqual(ack["turn_id"], "turn-ack")
         self.assertIn("text_hash", ack)
 
+    def test_fast_response_logs_observable_thinking_tts_skip(self):
+        request = ChatRequest(message="tell me something", turn_id="turn-fast", client_request_id="turn-fast")
+
+        def fast_stream(*args, **kwargs):
+            yield "Fast final."
+
+        with (
+            patch.object(main_module, "fast_intent_router_service", type("Router", (), {"route": lambda *args, **kwargs: FakeRoute()})()),
+            patch.object(main_module, "acknowledgement_service", AcknowledgementService()),
+            patch.object(main_module, "chat_service", type("Chat", (), {"process_jarvis_message_stream": fast_stream})()),
+            self.assertLogs("J.A.R.V.I.S", level="INFO") as logs,
+        ):
+            list(main_module._jarvis_realtime_pipeline("s", request, InterruptToken("s", "turn-fast"), LatencyTracker()))
+
+        output = "\n".join(logs.output)
+        self.assertIn("[TTS_THINKING]", output)
+        self.assertIn("status=skipped", output)
+        self.assertIn("reason=fast_response", output)
+
     def test_thinking_tts_speaks_registered_ack_text(self):
         ack = AcknowledgementService().build_thinking_ack(turn_id="turn-tts", text="Let me take a look.")
         main_module._register_thinking_ack(ack)

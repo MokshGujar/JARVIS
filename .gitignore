@@ -43,6 +43,8 @@ database/camera_captures/
 database/face_identity/
 database/memory/
 database/observability/
+database/vector_store/
+database/voice_identity/
 database/face_identity/verification_history.jsonl
 database/voice_identity/verification_history.jsonl
 database/**/*.jpg

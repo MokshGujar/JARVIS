@@ -75,6 +75,22 @@ def test_automation_service_execute_enters_facade_not_legacy_brain():
     assert "_execute_legacy" not in calls
 
 
+def test_automation_service_execute_uses_extracted_facade_seams():
+    source = (ROOT / "app" / "services" / "automation_service.py").read_text(encoding="utf-8")
+    module = ast.parse(source)
+    service_class = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AutomationService")
+    init_func = next(node for node in service_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
+    execute_func = next(node for node in service_class.body if isinstance(node, ast.FunctionDef) and node.name == "execute")
+    init_segment = ast.get_source_segment(source, init_func) or ""
+    execute_segment = ast.get_source_segment(source, execute_func) or ""
+
+    assert "AutomationContextBuilder()" in init_segment
+    assert "AutomationFacadeResponseFormatter()" in init_segment
+    assert "PendingConfirmationService()" in init_segment
+    assert "self._context_builder.build" in execute_segment
+    assert "self._response_formatter.normalize" in execute_segment
+
+
 def test_legacy_delegate_methods_are_explicitly_marked():
     source = (ROOT / "app" / "services" / "automation_service.py").read_text(encoding="utf-8")
     module = ast.parse(source)

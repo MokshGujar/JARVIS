@@ -1,23 +1,17 @@
 # Semantic Routing Reliability Report
 
-Date: 2026-05-06
+Date: 2026-05-07
 
-## Fixed
+## Covered Behaviors
 
-- `search files` no longer routes to browser search.
-- `search files` without a query returns: `What file name or content should I search for?`
-- `search files for resume`, `search my files for invoice`, and `find files about project jarvis` route to `FileTool.search_files`.
-- Explicit web commands such as `search Google for files` still route to `BrowserTool`.
-- Subject context now supports follow-up searches such as `change the subject to MS Dhoni` followed by `search about him on Google`.
-- Browser pronouns resolve from subject/entity/browser query context, not file paths.
-- Empty STT/no-speech now returns a structured no-speech response and does not trigger chat/thinking/final TTS.
+- `search files` claims file/search_files with missing query.
+- `search files for resume` routes to FileTool search.
+- `search Google for files` and `search web for files` route to BrowserTool.
+- Subject-setting commands are deterministic and do not call Brain/Groq.
+- `search about him` uses current subject/entity or asks clarification.
+- Neutral browser pronouns may use last browser query.
+- System status/update/health commands route to SystemTool before general/camera.
 
-## Guardrails
+## Remaining Risks
 
-- Deterministic preemption is intentionally narrow. It fixes the file-search ambiguity without bypassing existing semantic characterization for app actions, file create/write, or high-risk confirmation flows.
-
-## Remaining
-
-- Service-level direct execution APIs were moved behind connectors/adapters during the containment phase. Remaining risks are semantic breadth risks, not known direct execution bypasses:
-  - non-WhatsApp external messaging remains compatibility-only until a dedicated MessageTool is promoted from metadata-only status;
-  - broader conversational follow-up resolution should stay narrow so general chat is not overclaimed as automation.
+- AutomationService still contains legacy fallback helpers, so guards must continue checking known tool-routable commands enter the canonical path before legacy branches.

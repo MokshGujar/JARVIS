@@ -156,7 +156,8 @@ class ToolExecutor:
             )
 
             result = normalize_tool_result(tool.execute(tool_context), default_action=step.action)
-            log_boundary(logger, "TOOL_EXECUTOR", tool=step.tool_name, action=step.action, status="success" if result.get("success") else "failed", policy_decision=policy_decision.decision.value)
+            execution_status = self._result_status(result)
+            log_boundary(logger, "TOOL_EXECUTOR", tool=step.tool_name, action=step.action, status=execution_status, policy_decision=policy_decision.decision.value)
             result["step_id"] = step.step_id
             result["selected_tool"] = step.tool_name
             result["planned_action"] = step.action
@@ -598,6 +599,16 @@ class ToolExecutor:
                     single["semantic_actions"] = list(plan.metadata.get("semantic_actions") or [])
             return single
         return result
+
+    @staticmethod
+    def _result_status(result: dict[str, Any]) -> str:
+        if (
+            result.get("status") == "clarification_required"
+            or result.get("requires_followup")
+            or result.get("action") in {"clarification_required", "semantic_followup_required"}
+        ):
+            return "clarification_required"
+        return "success" if result.get("success") else "failed"
 
     def _update_automation_context(self, plan: ActionPlan, context: ToolContext, step: ActionStep, result: dict[str, Any]) -> None:
         if not plan.metadata.get("semantic_execution"):

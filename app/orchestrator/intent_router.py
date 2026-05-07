@@ -30,7 +30,7 @@ class IntentRouter:
     )
     WHATSAPP_RE = re.compile(r"\bwhatsapp\b|\b(?:message|text|video\s+call|voice\s+call|call)\s+.+", re.I)
     BROWSER_PATTERNS = (
-        ("browser_search", "search", re.compile(r"^(?:browser search|search browser|search in browser|google search|search google for|search web for|search internet for|search online for)\s+.+", re.I)),
+        ("browser_search", "search", re.compile(r"^(?:browser search|search browser|search in browser|google search|search google for|search web for|search internet for|search online for|search about)\s+.+", re.I)),
         ("browser_search", "search", re.compile(r"^(?:search\s+(?:the\s+)?(?:web|internet|online)\s+for)\s+.+", re.I)),
         ("browser_search", "search", re.compile(r"^search\s+.+\s+on\s+google[.!?]*$", re.I)),
         ("browser_youtube_search", "youtube_search", re.compile(r"^(?:youtube search|search youtube for)\s+.+", re.I)),
@@ -53,7 +53,7 @@ class IntentRouter:
         ("shutdown_system", re.compile(r"^(?:shutdown|shut down)(?:\s+(?:my\s+)?(?:laptop|computer|system))?\b", re.I)),
         ("restart_system", re.compile(r"^(?:restart|reboot)(?:\s+(?:my\s+)?(?:laptop|computer|system))?\b", re.I)),
         ("sleep_system", re.compile(r"^(?:sleep|hibernate)(?:\s+(?:my\s+)?(?:laptop|computer|system))?\b", re.I)),
-        ("safe_system_info", re.compile(r"^(?:show disk space|disk space|battery status|system info)\b", re.I)),
+        ("safe_system_info", re.compile(r"^(?:show disk space|disk space|battery status|system info|show system status|give me system status|give me system updates|system update|system report|system health|show computer status|show pc status)\b", re.I)),
         ("window_control", re.compile(r"^(?:hotkey|press|show desktop|switch window|minimize|fullscreen|close current window)\b", re.I)),
     )
     MEMORY_RE = re.compile(r"\b(remember|what did i say earlier|recall|memory)\b", re.I)
@@ -153,7 +153,7 @@ class IntentRouter:
             return {}
         text = str(command or "").strip().strip(".!?")
         patterns = (
-            r"^(?:google search|search google for|search web for|search internet for|search online for)\s+(?P<query>.+)$",
+            r"^(?:google search|search google for|search web for|search internet for|search online for|search about)\s+(?P<query>.+)$",
             r"^search\s+(?P<query>.+?)\s+on\s+google$",
             r"^search\s+(?:the\s+)?(?:web|internet|online)\s+for\s+(?P<query>.+)$",
         )
@@ -162,8 +162,22 @@ class IntentRouter:
             if match:
                 query = (match.group("query") or "").strip()
                 if query:
-                    return {"query": query}
+                    return {"query": IntentRouter._normalize_browser_query(query)}
         return {}
+
+    @staticmethod
+    def _normalize_browser_query(value: str) -> str:
+        query = re.sub(r"\s+", " ", str(value or "").strip()).strip(" .!?")
+        previous = None
+        while query and query.lower() != previous:
+            previous = query.lower()
+            query = re.sub(
+                r"^(?:search\s+google\s+for|google\s+for|search\s+(?:the\s+)?(?:web|internet|online)\s+for|search\s+about)\s+",
+                "",
+                query,
+                flags=re.I,
+            ).strip(" .!?")
+        return query
 
     @staticmethod
     def _whatsapp_operation(command: str) -> str:

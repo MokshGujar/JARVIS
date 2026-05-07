@@ -49,6 +49,6 @@ Must stay guarded behind tool/policy:
 
 ## Shadow Tree And Runtime Pollution
 
-- `config/app` exists as an ignored copied app tree. Current runtime source import search found no `config.app` imports.
-- Tracked runtime data remains under `database/agent_tasks`, `database/chats_data`, `database/camera_captures`, `database/vector_store`, `database/voice_identity`, `database/face_identity`, and `database/memory`.
-- `.gitignore` now includes the missing runtime folders for future pollution prevention. No user/runtime data was deleted.
+- `config/app` was an ignored untracked copied app tree. Import/path checks found no runtime or test imports, so it was deleted from disk rather than archived.
+- Runtime/user data under `database/agent_tasks`, `database/chats_data`, `database/camera_captures`, `database/vector_store`, `database/voice_identity`, `database/face_identity`, and `database/memory` was removed from git tracking with `git rm --cached`; local files were preserved.
+- `.gitignore` includes runtime folders for future pollution prevention. No local user/runtime data was destroyed.

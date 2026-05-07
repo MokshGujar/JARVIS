@@ -124,7 +124,7 @@ class FileTool(BaseTool):
             planned_result = self._execute_planned_action(planned_action, dict(context.payload.get("args") or {}))
             if planned_result is not None:
                 planned_result["tool_name"] = self.name
-                log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="native" if planned_action else "legacy_delegate", status="success" if planned_result.get("success") else "failed", target=planned_result.get("path") or "")
+                log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="native" if planned_action else "legacy_delegate", status=self._result_status(planned_result), target=planned_result.get("path") or "")
                 return planned_result
 
         operation = self.operation_for(context.command)
@@ -137,7 +137,7 @@ class FileTool(BaseTool):
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
             normalized["file_operation"] = operation
-            log_boundary(logger, "TOOL", name="FileTool", action=(operation or {}).get("operation") or action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=context.command)
+            log_boundary(logger, "TOOL", name="FileTool", action=(operation or {}).get("operation") or action_name, delegate="legacy_delegate", status=self._result_status(normalized), target=context.command)
             return normalized
         result = {"success": False, "action": "unsupported", "message": "File tool is not wired yet."}
         log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
@@ -357,10 +357,23 @@ class FileTool(BaseTool):
     def _planned_search_files(self, args: dict[str, Any]) -> dict[str, Any]:
         query = str(args.get("query") or "").strip()
         if not query:
-            return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
+            return {
+                "success": False,
+                "action": "search_files",
+                "status": "clarification_required",
+                "message": "What file name or content should I search for?",
+                "requires_followup": True,
+                "missing_query": True,
+            }
         return normalize_automation_response(
             self.automation_bridge._find_files(query, str(args.get("folder") or args.get("location") or "home"))
         )
+
+    @staticmethod
+    def _result_status(result: dict[str, Any]) -> str:
+        if result.get("status") == "clarification_required" or result.get("requires_followup") or result.get("action") == "clarification_required":
+            return "clarification_required"
+        return "success" if result.get("success") else "failed"
 
     def _planned_rename_file(self, args: dict[str, Any]) -> dict[str, Any]:
         return normalize_automation_response(self.automation_bridge._rename_target(str(args.get("source") or ""), str(args.get("new_name") or ""), target_kind="file"))

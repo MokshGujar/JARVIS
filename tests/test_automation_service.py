@@ -102,14 +102,14 @@ class AutomationServiceFileCreationTests(unittest.TestCase):
         self.assertTrue(path.exists())
 
     def test_mark_style_system_commands_use_safe_hotkeys(self):
-        fake_keyboard = Mock()
+        fake_hotkey = Mock(return_value={"success": True, "action": "system", "message": "Done show desktop."})
 
-        with patch.object(automation_module, "keyboard", fake_keyboard):
+        with patch.object(self.service.computer_control_service, "hotkey", fake_hotkey):
             result = self.service.execute("show desktop")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["action"], "system")
-        fake_keyboard.press_and_release.assert_called_once_with("windows+d")
+        fake_hotkey.assert_called_once_with(["windows", "d"])
 
     def test_dangerous_system_commands_are_blocked(self):
         result = self.service.execute("shutdown the computer")

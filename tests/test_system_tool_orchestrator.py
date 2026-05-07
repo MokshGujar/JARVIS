@@ -32,6 +32,9 @@ class SystemToolOrchestratorTests(unittest.TestCase):
             "shutdown laptop": "shutdown_system",
             "restart laptop": "restart_system",
             "system info": "safe_system_info",
+            "show system status": "safe_system_info",
+            "give me system updates": "safe_system_info",
+            "system health": "safe_system_info",
         }
 
         for command, operation in cases.items():
@@ -99,6 +102,25 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["scenario"], "system.screenshot")
         self.assertEqual(result["policy"]["safety_level"], "LOW")
         bridge._execute_system_command_legacy.assert_called_once_with("take screenshot")
+
+    def test_status_phrases_route_to_system_tool(self):
+        for command in ("Show system status", "Give me system updates", "system health"):
+            with self.subTest(command=command):
+                bridge = Mock()
+                bridge._execute_system_command_legacy.return_value = {
+                    "success": True,
+                    "action": "safe_command_info",
+                    "message": "System OK",
+                }
+                orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
+
+                result = orchestrator.execute_text(command)
+
+                self.assertTrue(result["success"])
+                self.assertEqual(result["selected_tool"], "system")
+                self.assertEqual(result["scenario"], "system.safe_system_info")
+                self.assertEqual(result["policy"]["safety_level"], "LOW")
+                bridge._execute_system_command_legacy.assert_called_once_with(command)
 
     def test_lock_system_is_blocked_without_confirmation(self):
         bridge = Mock()

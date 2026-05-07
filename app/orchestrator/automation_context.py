@@ -203,7 +203,6 @@ class AutomationContext:
             self.last_file_path = action.file_path
         if action.query:
             self.last_browser_query = action.query
-            self.last_explicit_entity = action.query
         if action.url:
             self.last_opened_url = action.url
         if action.recipient or action.content:
@@ -255,7 +254,6 @@ class AutomationContext:
                 self.current_document_context = self.current_document_context or {"app": self.active_app}
         if query:
             self.last_browser_query = str(query)
-            self.last_explicit_entity = str(query)
             self.last_search_engine = self.last_search_engine or "google"
             self.current_browser_context = {"query": str(query), "browser": self.active_app or self.last_browser}
         if url:

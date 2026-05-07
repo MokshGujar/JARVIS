@@ -126,6 +126,11 @@ class SemanticActionMapper:
                 return _missing("search_query", "What should I search?")
             return [self._step(current_steps, "browser", "browser_search", "search", {"query": action.query})]
 
+        if intent == SemanticAutomationIntent.SEARCH_FILES:
+            if not action.query:
+                return _missing("file_search_query", "What file name or content should I search for?")
+            return [self._step(current_steps, "file", "file", "search_files", {"query": action.query})]
+
         if intent == SemanticAutomationIntent.SEARCH_VISIBLE_BROWSER:
             if not action.query:
                 return _missing("search_query", "What should I search?")

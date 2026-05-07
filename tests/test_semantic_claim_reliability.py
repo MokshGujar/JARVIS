@@ -63,6 +63,25 @@ class SemanticClaimReliabilityTests(unittest.TestCase):
         self.assertIn("wake_word_removed", result.corrections_applied)
         self.assertIn("filler_removed", result.corrections_applied)
 
+    def test_bare_search_files_claims_file_search_not_browser_search(self):
+        result = _planner().plan("Search files", context=AutomationContext(session_id="s1"), dry_run=False)
+
+        self.assertEqual(result.domain.value, "file")
+        self.assertEqual([action.intent.value for action in result.semantic_actions], ["SEARCH_FILES"])
+        self.assertEqual(result.semantic_actions[0].preferred_tool, "file")
+        self.assertEqual(result.missing_fields, ["file_search_query"])
+        self.assertEqual(result.follow_up_question, "What file name or content should I search for?")
+
+    def test_explicit_web_file_searches_claim_browser_search(self):
+        for command in ("Search Google for files", "Search web for files"):
+            with self.subTest(command=command):
+                result = _planner().plan(command, context=AutomationContext(session_id="s1"), dry_run=False)
+
+                self.assertEqual(result.domain.value, "browser")
+                self.assertEqual([action.intent.value for action in result.semantic_actions], ["SEARCH_WEB"])
+                self.assertEqual(result.semantic_actions[0].preferred_tool, "browser")
+                self.assertEqual(result.semantic_actions[0].query, "files")
+
     def test_trailing_wake_word_open_calculator_is_semantic_open_app_claim(self):
         result = _planner().plan("open calculator Jarvis", context=AutomationContext(session_id="s1"), dry_run=False)
 

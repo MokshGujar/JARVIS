@@ -115,7 +115,7 @@ class BrowserTool(BaseTool):
 
     def _execute_planned_action(self, action: str, args: dict[str, Any], *, context: ToolContext) -> dict[str, Any] | None:
         if action == "search":
-            query = str(args.get("query") or "").strip()
+            query = self._normalize_search_query(args.get("query"))
             if not query:
                 return {"success": False, "action": "search", "message": "Tell me what to search for."}
             if self.automation_bridge and hasattr(self.automation_bridge, "_execute_browser_command_legacy"):
@@ -141,3 +141,17 @@ class BrowserTool(BaseTool):
             return {"success": False, "action": action, "message": "Browser tool is not wired yet."}
 
         return None
+
+    @staticmethod
+    def _normalize_search_query(value: Any) -> str:
+        query = re.sub(r"\s+", " ", str(value or "").strip()).strip(" .!?")
+        previous = None
+        while query and query.lower() != previous:
+            previous = query.lower()
+            query = re.sub(
+                r"^(?:search\s+google\s+for|google\s+for|search\s+(?:the\s+)?(?:web|internet|online)\s+for|search\s+about)\s+",
+                "",
+                query,
+                flags=re.I,
+            ).strip(" .!?")
+        return query

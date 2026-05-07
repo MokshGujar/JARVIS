@@ -62,6 +62,22 @@ class BrowserToolOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["scenario"], "browser.search")
         browser_service.execute.assert_called_once_with("search", query="python docs", engine="google")
 
+    def test_planned_browser_search_strips_repeated_engine_prefix(self):
+        browser_service = Mock()
+        browser_service.execute.return_value = {"success": True, "action": "browser_control", "message": "searched"}
+        tool = BrowserTool(BrowserConnector(browser_service))
+
+        result = tool.execute(
+            ToolContext(
+                command="search google for google for cats",
+                intent="browser_search",
+                payload={"action": "search", "args": {"query": "google for cats"}},
+            )
+        )
+
+        self.assertTrue(result["success"])
+        browser_service.execute.assert_called_once_with("search", query="cats", engine="google")
+
     def test_browser_tool_delegates_to_legacy_bridge_when_available(self):
         bridge = Mock()
         bridge._execute_browser_command_legacy.return_value = {"success": True, "action": "open", "message": "Opening youtube."}

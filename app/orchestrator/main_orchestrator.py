@@ -64,7 +64,7 @@ class MainOrchestrator:
         if route is not None and (
             route.tool_name == "whatsapp"
             or (route.tool_name == "file" and route.operation == "search_files")
-        ):
+        ) and self._route_tool_available(route):
             return self._execute_route(route, context)
 
         semantic_result = self.semantic_adapter.try_live_result(
@@ -98,6 +98,9 @@ class MainOrchestrator:
 
         return self._execute_route(route, context)
 
+    def _route_tool_available(self, route: RouteDecision) -> bool:
+        return self.registry.contains(route.tool_name)
+
     def _execute_route(self, route: RouteDecision, context: ToolContext) -> dict[str, Any]:
         log_boundary(
             logger,
@@ -110,7 +113,7 @@ class MainOrchestrator:
             action=route.operation,
             status="executing",
         )
-        if not self.registry.contains(route.tool_name) and self.registry.by_intent(route.intent) is None:
+        if not self.registry.contains(route.tool_name):
             log_boundary(logger, "ORCHESTRATOR", command=context.command, route=route.scenario, domain=route.category, intent=route.intent, tool=route.tool_name, action=route.operation, status="blocked")
             return {
                 "success": False,
@@ -141,7 +144,8 @@ class MainOrchestrator:
         if isinstance(result, dict):
             result.setdefault("selected_tool", route.tool_name)
             result.setdefault("scenario", route.scenario)
-            log_boundary(logger, "ORCHESTRATOR", command=context.command, route=route.scenario, domain=route.category, intent=route.intent, tool=route.tool_name, action=route.operation, status="complete" if result.get("success") else "blocked")
+            status = "complete" if result.get("success") else "clarification_required" if _is_clarification_result(result) else "blocked"
+            log_boundary(logger, "ORCHESTRATOR", command=context.command, route=route.scenario, domain=route.category, intent=route.intent, tool=route.tool_name, action=route.operation, status=status)
         return result
 
     def execute_text(self, user_text: str, **context_kwargs: Any) -> dict[str, Any] | None:
@@ -175,3 +179,11 @@ class MainOrchestrator:
         if payload_context is not None:
             return payload_context
         return context.metadata.get("automation_context")
+
+
+def _is_clarification_result(result: dict[str, Any]) -> bool:
+    return bool(
+        result.get("status") == "clarification_required"
+        or result.get("requires_followup")
+        or result.get("action") in {"clarification_required", "semantic_followup_required"}
+    )

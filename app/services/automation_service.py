@@ -1,5 +1,3 @@
-import hashlib
-import json
 import logging
 import os
 import re
@@ -9,16 +7,18 @@ import uuid
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
-from config import AUTOMATION_CONTEXT_ENABLED, BASE_DIR
-from app.orchestrator.automation_context import AutomationContext, AutomationContextStore
+from config import BASE_DIR
+from app.orchestrator.automation_context import AutomationContext
 from app.services.browser_control_service import BrowserControlService
 from app.services.computer_control_service import ComputerControlService
 from app.services.computer_settings_service import ComputerSettingsService
 from app.services.contact_match_service import ContactCandidate, ContactMatchService
 from app.services.game_service import GameService
 from app.services.message_action_service import MessageActionService
-from app.services.automation_response import normalize_automation_response
+from app.services.automation_context_builder import AutomationContextBuilder
+from app.services.automation_response_formatter import AutomationFacadeResponseFormatter
 from app.services.automation_path_aliases import build_user_path_aliases
+from app.services.pending_confirmation_service import PendingConfirmationService
 from app.services.safe_command_info_service import SafeCommandInfoService
 from app.services.youtube_tools_service import YouTubeToolsService
 from app.services.whatsapp_desktop_automation import WhatsAppDesktopAutomation
@@ -277,10 +277,13 @@ class AutomationService:
         self._pending_mark_action: dict | None = None
         self._pending_whatsapp_clarification: dict | None = None
         self._pending_dry_run_plan: dict | None = None
-        self._session_pending_state: dict[str, dict] = {}
-        self._automation_context_store = AutomationContextStore()
+        self._pending_confirmation_service = PendingConfirmationService()
+        self._context_builder = AutomationContextBuilder()
+        self._response_formatter = AutomationFacadeResponseFormatter()
+        self._session_pending_state = self._pending_confirmation_service.session_state
+        self._automation_context_store = self._context_builder.store
         self._active_automation_context: AutomationContext | None = None
-        self._confirmation_prompt_emitted_ids: set[str] = set()
+        self._confirmation_prompt_emitted_ids = self._pending_confirmation_service.emitted_prompt_ids
         self._last_browser_choice: str | None = None
         self._browser_session_id = f"browser-{uuid.uuid4().hex[:10]}"
         self._last_file_target: Path | None = None
@@ -423,6 +426,12 @@ class AutomationService:
         if self._has_pending_dry_run_plan() and lowered in {"yes", "y", "do it", "confirm", "go ahead", "proceed", "no", "n", "cancel", "stop"}:
             return True
 
+        if self._looks_like_subject_context_command(lowered):
+            return True
+
+        if self._looks_like_contextual_browser_followup(lowered):
+            return True
+
         if re.match(
             r"^(?:where\s+is\s+(?:it|that|that\s+file|the\s+file)|show\s+(?:me\s+)?(?:the\s+)?full\s+path|copy\s+(?:the\s+)?path)[.!?]*$",
             lowered,
@@ -445,7 +454,7 @@ class AutomationService:
         ):
             return True
 
-        if lowered in {"mute", "unmute", "volume up", "volume down"}:
+        if lowered in {"mute", "unmute", "volume up", "volume down"} or self._looks_like_local_system_status(lowered):
             return True
 
         if self._looks_like_mark_request(lowered):
@@ -460,7 +469,8 @@ class AutomationService:
         return bool(re.match(
             r"^(?:open|launch|start|close|kill|play|type|paste|create|make|"
             r"delete|remove|move|rename|google search|youtube search|search google|"
-            r"search youtube|mute|unmute|volume up|volume down|turn volume|"
+            r"search youtube|search web|search about|system status|system update|system report|system health|"
+            r"mute|unmute|volume up|volume down|turn volume|"
             r"show desktop|switch window|switch app|next window|close this window|"
             r"close current window|minimize|fullscreen|full screen|list files|"
             r"show files|read file|find files|find pdf|find pdfs|show largest|"
@@ -549,17 +559,18 @@ class AutomationService:
             }
         if session_id:
             self._load_session_pending_state(session_id)
+        request_context = self._context_builder.build(command, session_id=session_id, turn_id=turn_id)
         previous_context = self._active_automation_context
         previous_session_id = self._active_session_id
         previous_turn_id = self._active_turn_id
         previous_step_up_verified = self._active_step_up_verified
-        self._active_automation_context = self._automation_context_for(session_id)
+        self._active_automation_context = request_context.automation_context
         self._active_session_id = session_id
         self._active_turn_id = turn_id
         self._active_step_up_verified = bool(step_up_verified)
         try:
             previous_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
-            result = normalize_automation_response(self._execute_facade(command))
+            result = self._response_formatter.normalize(self._execute_facade(request_context.command))
             current_confirmation_keys = self._active_confirmation_prompt_keys(session_id)
             self._clear_stale_confirmation_prompts(previous_confirmation_keys, current_confirmation_keys)
             result = self._dedupe_confirmation_prompt(result, session_id=session_id)
@@ -573,119 +584,37 @@ class AutomationService:
             self._active_step_up_verified = previous_step_up_verified
 
     def _automation_context_for(self, session_id: str | None) -> AutomationContext | None:
-        if not AUTOMATION_CONTEXT_ENABLED:
-            return None
-        return self._automation_context_store.get(session_id or "default")
+        return self._context_builder.get_context(session_id)
 
     def _load_session_pending_state(self, session_id: str) -> None:
-        state = self._session_pending_state.get(session_id) or {}
-        self._pending_delete_target = state.get("delete_target")
-        self._pending_open_target = state.get("open_target")
-        self._pending_browser_search = state.get("browser_search")
-        self._pending_create_file = state.get("create_file")
-        self._pending_incomplete_command = state.get("incomplete_command")
-        self._pending_mark_action = state.get("mark_action")
-        self._pending_whatsapp_clarification = state.get("whatsapp_clarification")
-        self._pending_dry_run_plan = state.get("dry_run_plan")
+        self._pending_confirmation_service.load_into(self, session_id)
 
     def _save_session_pending_state(self, session_id: str) -> None:
-        state = {
-            "delete_target": self._pending_delete_target,
-            "open_target": self._pending_open_target,
-            "browser_search": self._pending_browser_search,
-            "create_file": self._pending_create_file,
-            "incomplete_command": self._pending_incomplete_command,
-            "mark_action": self._pending_mark_action,
-            "whatsapp_clarification": self._pending_whatsapp_clarification,
-            "dry_run_plan": self._pending_dry_run_plan,
-        }
-        if any(value is not None for value in state.values()):
-            self._session_pending_state[session_id] = state
-        else:
-            self._session_pending_state.pop(session_id, None)
+        self._pending_confirmation_service.save_from(self, session_id)
 
     def _confirmation_scope_key(self, pending_action_id: str, session_id: str | None) -> str:
-        return f"{session_id or '__default__'}:{pending_action_id}"
+        return self._pending_confirmation_service.confirmation_scope_key(pending_action_id, session_id)
 
     def _pending_action_id(self, kind: str, payload: object) -> str:
-        def sanitize(value: object) -> object:
-            if isinstance(value, dict):
-                return {str(key): sanitize(val) for key, val in sorted(value.items()) if key != "expires_at"}
-            if isinstance(value, (list, tuple, set)):
-                return [sanitize(item) for item in value]
-            if isinstance(value, Path):
-                return str(value)
-            return value
-
-        clean_payload = sanitize(payload)
-        raw = json.dumps({"kind": kind, "payload": clean_payload}, sort_keys=True, default=str)
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-        return f"{kind}:{digest}"
+        return self._pending_confirmation_service.pending_action_id(kind, payload)
 
     def _active_pending_confirmation_id(self) -> str | None:
-        if self._pending_mark_action is not None:
-            pending = self._pending_mark_action
-            return self._pending_action_id(str(pending.get("kind") or "mark"), dict(pending.get("payload") or {}))
-        if self._pending_delete_target is not None:
-            return self._pending_action_id("delete", {"target": self._pending_delete_target})
-        return None
+        return self._pending_confirmation_service.active_pending_confirmation_id(self)
 
     def _active_confirmation_prompt_keys(self, session_id: str | None) -> set[str]:
-        pending_action_id = self._active_pending_confirmation_id()
-        if not pending_action_id:
-            return set()
-        return {self._confirmation_scope_key(pending_action_id, session_id)}
+        return self._pending_confirmation_service.active_confirmation_prompt_keys(self, session_id)
 
     def _clear_stale_confirmation_prompts(self, previous_keys: set[str], current_keys: set[str]) -> None:
-        for key in previous_keys - current_keys:
-            self._confirmation_prompt_emitted_ids.discard(key)
+        self._pending_confirmation_service.clear_stale_confirmation_prompts(previous_keys, current_keys)
 
     def _dedupe_confirmation_prompt(self, result: dict[str, object], *, session_id: str | None) -> dict[str, object]:
-        pending_action_id = self._active_pending_confirmation_id()
-        if not pending_action_id:
-            return result
-
-        scoped_key = self._confirmation_scope_key(pending_action_id, session_id)
-        prompt_already_emitted = scoped_key in self._confirmation_prompt_emitted_ids
-        result["pending_action_id"] = pending_action_id
-        if isinstance(result.get("pending"), dict):
-            result["pending"] = {**dict(result["pending"]), "pending_action_id": pending_action_id}
-
-        for action in result.get("actions") or []:
-            if isinstance(action, dict) and action.get("type") == "show_status":
-                action["pending_action_id"] = pending_action_id
-
-        if prompt_already_emitted and self._is_repeat_confirmation_prompt_result(result):
-            message = "Waiting for your confirmation."
-            result["message"] = message
-            result["display_text"] = message
-            result["spoken_text"] = ""
-            for action in result.get("actions") or []:
-                if isinstance(action, dict) and action.get("type") == "show_status":
-                    action["message"] = message
-            return result
-
-        if self._is_confirmation_prompt_result(result):
-            self._confirmation_prompt_emitted_ids.add(scoped_key)
-            result.setdefault("spoken_text", str(result.get("message") or ""))
-        return result
+        return self._pending_confirmation_service.dedupe_confirmation_prompt(self, result, session_id=session_id)
 
     def _is_repeat_confirmation_prompt_result(self, result: dict[str, object]) -> bool:
-        action = str(result.get("action") or "")
-        if action == "multi_action":
-            return False
-        return self._is_confirmation_prompt_result(result)
+        return self._pending_confirmation_service.is_repeat_confirmation_prompt_result(result)
 
     def _is_confirmation_prompt_result(self, result: dict[str, object]) -> bool:
-        if result.get("pending_action_id"):
-            return True
-        action = str(result.get("action") or "")
-        message = str(result.get("message") or "")
-        if action in {"whatsapp_call_pending", "send_message_pending", "game_confirmation", "delete_file", "delete_folder", "delete", "confirmation"}:
-            return bool(
-                re.search(r"\bsay yes\b|\breply yes\b|\bplease reply yes\b|\bno to cancel\b|\bconfirm\b", message, re.I)
-            )
-        return False
+        return self._pending_confirmation_service.is_confirmation_prompt_result(result)
 
     def _has_pending_incomplete_command(self) -> bool:
         pending = self._pending_incomplete_command
@@ -803,7 +732,7 @@ class AutomationService:
 
     def _handle_subject_context_command(self, command: str) -> Dict[str, object] | None:
         match = re.match(
-            r"^(?:change\s+(?:the\s+)?subject\s+to|change\s+topic\s+to|make\s+it\s+about|switch\s+topic\s+to|now\s+about|talk\s+about)\s+(.+?)[.!?]*$",
+            r"^(?:change\s+(?:the\s+)?subject\s+to|change\s+(?:the\s+)?topic\s+to|make\s+it\s+about|switch\s+topic\s+to|now\s+about|talk\s+about)\s+(.+?)[.!?]*$",
             command,
             flags=re.IGNORECASE,
         )
@@ -818,17 +747,44 @@ class AutomationService:
             self._active_automation_context.touch()
         return {"success": True, "action": "subject_updated", "message": f"Okay, I'll keep the subject as {subject}."}
 
+    @staticmethod
+    def _looks_like_subject_context_command(lowered: str) -> bool:
+        return bool(
+            re.match(
+                r"^(?:change\s+(?:the\s+)?subject\s+to|change\s+(?:the\s+)?topic\s+to|make\s+it\s+about|switch\s+topic\s+to|now\s+about|talk\s+about)\s+.+",
+                str(lowered or "").strip(),
+                flags=re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_contextual_browser_followup(lowered: str) -> bool:
+        return bool(
+            re.match(
+                r"^(?:search\s+about\s+(?:him|her|it|this|that)(?:\s+again)?(?:\s+on\s+google)?|google\s+(?:him|her|it|this|that)|look\s+(?:him|her|it|this|that)\s+up)[.!?]*$",
+                str(lowered or "").strip(),
+                flags=re.IGNORECASE,
+            )
+        )
+
     def _rewrite_contextual_followup(self, command: str) -> str | Dict[str, object] | None:
         lowered = command.strip().lower()
-        if re.match(
-            r"^(?:search\s+about\s+(?:him|her|it|this|that)(?:\s+again)?(?:\s+on\s+google)?|google\s+(?:him|her|it|this|that)|look\s+(?:him|her|it|this|that)\s+up)[.!?]*$",
+        pronoun_match = re.match(
+            r"^(?:search\s+about\s+(?P<pronoun>him|her|it|this|that)(?:\s+again)?(?:\s+on\s+google)?|google\s+(?P<google_pronoun>him|her|it|this|that)|look\s+(?P<lookup_pronoun>him|her|it|this|that)\s+up)[.!?]*$",
             lowered,
             flags=re.IGNORECASE,
-        ):
+        )
+        if pronoun_match:
+            pronoun = pronoun_match.group("pronoun") or pronoun_match.group("google_pronoun") or pronoun_match.group("lookup_pronoun") or ""
             context = self._active_automation_context
-            target = context.current_subject or context.last_explicit_entity or context.last_browser_query if context is not None else None
+            target = None
+            if context is not None:
+                target = context.current_subject or context.last_explicit_entity
+                if not target and pronoun in {"it", "this", "that"}:
+                    target = context.last_browser_query
             if not target:
-                return {"success": False, "action": "clarification_required", "message": "Who or what should I search for?"}
+                message = "Who should I search for?" if pronoun in {"him", "her"} else "What should I search for?"
+                return {"success": False, "action": "clarification_required", "status": "clarification_required", "message": message, "requires_followup": True}
             return f"search google for {target}"
 
         file_followup = re.match(
@@ -838,10 +794,14 @@ class AutomationService:
         )
         if file_followup:
             context = self._active_automation_context
-            target = context.last_created_file_path or context.last_file_target or context.last_file_path if context is not None else None
+            target = (
+                context.last_created_file_path or context.last_file_target or context.last_file_path
+                if context is not None
+                else None
+            )
             if not target:
                 return {"success": False, "action": "clarification_required", "message": "Which file should I update?"}
-            return f"append {file_followup.group('content').strip()} to {target}"
+            return f"append {file_followup.group('content').strip()} to it"
         return None
 
     def _execute_facade(self, command: str) -> Dict[str, str | bool]:
@@ -972,7 +932,7 @@ class AutomationService:
         if search_files_match:
             query = (search_files_match.group(1) or "").strip()
             if not query:
-                return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
+                return {"success": False, "action": "search_files", "status": "clarification_required", "message": "What file name or content should I search for?", "requires_followup": True, "missing_query": True}
             return self._find_files(query, "home")
 
         read_match = re.match(
@@ -1324,6 +1284,9 @@ class AutomationService:
         if self._looks_like_whatsapp_command(str(command or "").strip().lower()):
             return None
         probe_orchestrator = MainOrchestrator(registry=ToolRegistry(), enforce_policy=False)
+        route = probe_orchestrator.route(command)
+        if route is not None and route.tool_name == "file" and route.operation == "search_files":
+            return None
         payload = {"turn_id": self._active_turn_id} if self._active_turn_id else {}
         if self._active_automation_context is not None:
             payload["automation_context"] = self._active_automation_context
@@ -1622,6 +1585,12 @@ class AutomationService:
         normalized_text = self._normalize_spoken_command(command)
         lowered = normalized_text.lower()
 
+        if self._looks_like_local_system_status(lowered):
+            return self.safe_command_info_service.execute("systeminfo")
+
+        if self._looks_like_safe_command_info(lowered):
+            return self.safe_command_info_service.execute(normalized_text)
+
         system_alias = self._match_system_command(lowered)
         if system_alias:
             return self._system_command(system_alias)
@@ -1663,7 +1632,7 @@ class AutomationService:
         if search_files_match:
             query = (search_files_match.group(1) or "").strip()
             if not query:
-                return {"success": False, "action": "search_files", "message": "What file name or content should I search for?"}
+                return {"success": False, "action": "search_files", "status": "clarification_required", "message": "What file name or content should I search for?", "requires_followup": True, "missing_query": True}
             return self._find_files(query, "home")
 
         read_match = re.match(
@@ -2511,12 +2480,12 @@ class AutomationService:
                 return control_result
 
         google_search_match = re.match(
-            r"^(?:google search|search google for|search)\s+(.+?)(?:\s+on\s+google)?[.!?]*$",
+            r"^(?:google search|search google for|search web for|search internet for|search online for|search about|search)\s+(.+?)(?:\s+on\s+google)?[.!?]*$",
             normalized_text,
             flags=re.IGNORECASE,
         )
         if google_search_match and ("google" in lowered or lowered.startswith("search ")):
-            query = google_search_match.group(1).strip()
+            query = self._normalize_browser_search_query(google_search_match.group(1).strip())
             query = re.sub(r"\s+on\s+google$", "", query, flags=re.IGNORECASE).strip()
             return self._google_search(query)
 
@@ -2654,6 +2623,16 @@ class AutomationService:
             "current date",
         )
         return any(phrase in lowered for phrase in explicit) or lowered.startswith(("run command ", "cmd "))
+
+    @staticmethod
+    def _looks_like_local_system_status(lowered: str) -> bool:
+        text = re.sub(r"\s+", " ", str(lowered or "").strip().lower()).strip(" .!?")
+        return bool(
+            re.match(
+                r"^(?:show system status|give me system status|give me system updates|system update|system report|system health|show computer status|show pc status)$",
+                text,
+            )
+        )
 
     def _split_compound_commands(self, command: str) -> list[str]:
         cleaned = self._normalize_spoken_command(command)
@@ -3145,7 +3124,9 @@ class AutomationService:
         if not target:
             return {"success": False, "action": "google_search", "message": "Tell me what you want me to search on Google."}
 
-        query = target.strip()
+        query = self._normalize_browser_search_query(target)
+        if not query:
+            return {"success": False, "action": "google_search", "message": "Tell me what you want me to search on Google."}
         url = f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
         try:
             self._open_url(url, browser=browser)
@@ -3156,6 +3137,20 @@ class AutomationService:
             return {"success": True, "action": "google_search", "message": f"Searching Google for {query}{browser_text}."}
         except Exception as exc:
             return {"success": False, "action": "google_search", "message": f"I could not search Google for {query}: {exc}"}
+
+    @staticmethod
+    def _normalize_browser_search_query(target: str) -> str:
+        query = re.sub(r"\s+", " ", str(target or "").strip()).strip(" .!?")
+        previous = None
+        while query and query.lower() != previous:
+            previous = query.lower()
+            query = re.sub(
+                r"^(?:search\s+google\s+for|google\s+for|search\s+(?:the\s+)?(?:web|internet|online)\s+for|search\s+about)\s+",
+                "",
+                query,
+                flags=re.IGNORECASE,
+            ).strip(" .!?")
+        return query
 
     def _youtube_search(self, target: str, browser: str | None = None) -> Dict[str, str | bool]:
         if not target:

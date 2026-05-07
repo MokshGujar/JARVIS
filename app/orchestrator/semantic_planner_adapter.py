@@ -50,6 +50,7 @@ LIVE_FILE_INTENTS = {
     SemanticAutomationIntent.WRITE_FILE,
     SemanticAutomationIntent.APPEND_FILE,
     SemanticAutomationIntent.SAVE_CONTENT_AS_FILE,
+    SemanticAutomationIntent.SEARCH_FILES,
 }
 LIVE_SAFE_SEMANTIC_INTENTS = {
     SemanticAutomationIntent.OPEN_APP,
@@ -528,6 +529,7 @@ class SemanticPlannerAdapter:
             "file": "Which file should I use?",
             "content": "I need to know what content you mean first.",
             "search_query": "I need to know what to search first.",
+            "file_search_query": "What file name or content should I search for?",
             "reference": "I need to know what you want to replace first.",
             "browser_context": "I need to know which browser you mean first.",
         }.get(field, f"I need to know which {field.replace('_', ' ')} you mean first.")

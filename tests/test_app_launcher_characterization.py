@@ -13,7 +13,7 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
             ("open calculator", ["calc.exe"], "Done, I opened calculator."),
             ("open notepad", ["notepad.exe"], "Done, I opened notepad."),
         ]
-        with patch.object(automation_module.subprocess, "Popen") as popen:
+        with patch("app.connectors.local_app_connector.subprocess.Popen") as popen:
             for command, expected_command, expected_message in cases:
                 with self.subTest(command=command):
                     popen.reset_mock()
@@ -25,17 +25,17 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
 
     def test_open_file_explorer_is_handled_by_settings_service(self):
         service = AutomationService()
-        with patch.object(automation_module.subprocess, "Popen") as popen:
+        with patch("app.connectors.local_app_connector.subprocess.Popen") as popen:
             result = service.execute("open file explorer")
 
         self.assertTrue(result["success"])
-        self.assertEqual(result["action"], "computer_settings")
-        self.assertEqual(result["message"], "Opened open file explorer.")
+        self.assertEqual(result["action"], "open")
+        self.assertEqual(result["message"], "Done, I opened file explorer.")
         popen.assert_called_once_with(["explorer.exe"])
 
     def test_open_settings_uses_direct_uri(self):
         service = AutomationService()
-        with patch.object(automation_module.os, "startfile", create=True) as startfile:
+        with patch("app.connectors.local_app_connector.os.startfile", create=True) as startfile:
             result = service.execute("open settings")
 
         self.assertTrue(result["success"])
@@ -45,7 +45,7 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
 
     def test_open_youtube_uses_browser_control_url(self):
         service = AutomationService()
-        with patch.object(automation_module.webbrowser, "open") as web_open:
+        with patch("app.connectors.local_app_connector.webbrowser.open") as web_open:
             result = service.execute("open youtube")
 
             self.assertTrue(result["success"])
@@ -75,7 +75,7 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
     def test_alias_calc_opens_calculator(self):
         service = AutomationService()
         service._appopener_available = True
-        with patch.object(automation_module, "appopener_open") as app_open:
+        with patch("app.connectors.local_app_connector.appopener_open") as app_open:
             result = service.execute("open calc")
 
         self.assertTrue(result["success"])
@@ -86,7 +86,7 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
     def test_unknown_app_response_when_appopener_fails(self):
         service = AutomationService()
         service._appopener_available = True
-        with patch.object(automation_module, "appopener_open", side_effect=RuntimeError("missing")):
+        with patch("app.connectors.local_app_connector.appopener_open", side_effect=RuntimeError("missing")):
             result = service.execute("open made up app")
 
         self.assertFalse(result["success"])
@@ -102,7 +102,7 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
         service = AutomationService()
         service._appopener_available = True
 
-        with patch.object(automation_module, "appopener_open") as mocked_open:
+        with patch("app.connectors.local_app_connector.appopener_open") as mocked_open:
             result = service.execute("call someone")
 
         mocked_open.assert_not_called()

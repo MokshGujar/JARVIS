@@ -2245,10 +2245,23 @@ def _jarvis_realtime_pipeline(session_id: str, request: ChatRequest, interrupt_t
                     yield _metrics_event(metrics)
 
         if first_chunk is stream_end:
+            if not thinking_started:
+                logger.info(
+                    "[TTS_THINKING] turn_id=%s text_hash=%s status=skipped reason=fast_response",
+                    thinking_ack.get("turn_id"),
+                    thinking_ack.get("text_hash"),
+                )
             stop = thinking_stop()
             if stop:
                 yield stop
             return
+
+        if not thinking_started:
+            logger.info(
+                "[TTS_THINKING] turn_id=%s text_hash=%s status=skipped reason=fast_response",
+                thinking_ack.get("turn_id"),
+                thinking_ack.get("text_hash"),
+            )
 
         def iter_chunks():
             yield first_chunk

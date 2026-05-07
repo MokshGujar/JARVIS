@@ -7,6 +7,7 @@ Date: 2026-05-06
 - Canonical executable automation remains:
   `AutomationService -> MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool -> Connector/Adapter`.
 - `AutomationService.execute()` remains facade-first and does not call legacy execution before `MainOrchestrator` for known executable commands.
+- `AutomationService.execute()` now uses extracted seams for context building, response formatting, and pending confirmation state/prompt handling.
 - High-level service files listed in the containment phase no longer import or call direct execution APIs such as `subprocess`, `webbrowser.open`, `os.startfile`, `pyautogui`, or `pywinauto`.
 - `AutomationService` retains legacy delegate method names for tool compatibility, but the low-level app/browser/process/keyboard/file-move primitives now live behind connectors/adapters.
 
@@ -18,6 +19,9 @@ Date: 2026-05-06
 - `app/services/message_action_service.py` delegates to `app/connectors/message_action_connector.py`.
 - `app/services/whatsapp_desktop_automation.py` delegates to `app/adapters/whatsapp/desktop_adapter.py`.
 - `app/services/safe_command_info_service.py` delegates to `app/connectors/safe_command_info_connector.py`.
+- `app/services/automation_context_builder.py` builds safe automation request context.
+- `app/services/automation_response_formatter.py` provides the facade response formatting seam over existing response normalization.
+- `app/services/pending_confirmation_service.py` owns pending confirmation/session prompt glue during the strangler transition.
 - `app/services/game_service.py` delegates launch/open operations to `app/connectors/game_launcher_connector.py`.
 - `app/services/youtube_tools_service.py` delegates play/search open operations to `app/connectors/youtube_connector.py`; summary/info/trending remain read-only service logic.
 
