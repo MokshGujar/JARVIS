@@ -52,3 +52,26 @@ Must stay guarded behind tool/policy:
 - `config/app` was an ignored untracked copied app tree. Import/path checks found no runtime or test imports, so it was deleted from disk rather than archived.
 - Runtime/user data under `database/agent_tasks`, `database/chats_data`, `database/camera_captures`, `database/vector_store`, `database/voice_identity`, `database/face_identity`, and `database/memory` was removed from git tracking with `git rm --cached`; local files were preserved.
 - `.gitignore` includes runtime folders for future pollution prevention. No local user/runtime data was destroyed.
+
+## 2026-05-07 Enforcement Update
+
+- `AutomationService` was reduced to 1,528 LOC with 56 directly defined methods.
+- Removed private delegate methods: `_execute_app_launcher_command_legacy`, `_execute_system_command_legacy`, `_execute_file_command_legacy`, `_execute_whatsapp_command_legacy`, `_execute_browser_command_legacy`, `_execute_browser_control_legacy`.
+- `AppTool`, `AppLauncherTool`, `BrowserTool`, `FileTool`, `SystemTool`, and `WhatsAppTool` route compatibility parsing through tool-owned runner classes.
+- Architecture guards now assert removed private delegate methods are absent from `AutomationService`, `app/tools`, and non-guard tests.
+- Focused enforcement suite result: `132 passed, 1 warning, 60 subtests passed in 2.68s`.
+- Full `tests` directory with pytest cache disabled: `666 passed, 407 subtests passed in 59.41s`.
+- Root-level `python -m pytest -q -p no:cacheprovider` was blocked during collection by unreadable generated `pytest-cache-files-*` directories; the environment rejected cache cleanup, so the suite was run against `tests/` directly.
+
+## 2026-05-07 Domain Helper Split
+
+- The monolithic `app/services/automation_compatibility_mixins.py` file was deleted.
+- Compatibility helpers are split into domain modules:
+  - `automation_file_compatibility.py`
+  - `automation_app_browser_compatibility.py`
+  - `automation_system_compatibility.py`
+  - `automation_whatsapp_compatibility.py`
+- New guard: `tests/test_architecture_execution_boundaries.py` asserts the monolithic mixin file and import do not return.
+- Verification after domain split:
+  - Focused command: `133 passed, 1 warning, 60 subtests passed in 2.26s`.
+  - Full `tests/` command with cache disabled: `667 passed, 413 subtests passed in 59.77s`.

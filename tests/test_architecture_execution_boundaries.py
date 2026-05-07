@@ -91,11 +91,11 @@ def test_automation_service_execute_uses_extracted_facade_seams():
     assert "self._response_formatter.normalize" in execute_segment
 
 
-def test_legacy_delegate_methods_are_explicitly_marked():
+def test_legacy_delegate_methods_have_been_migrated_out_of_automation_service():
     source = (ROOT / "app" / "services" / "automation_service.py").read_text(encoding="utf-8")
     module = ast.parse(source)
     service_class = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AutomationService")
-    delegate_names = {
+    removed_delegate_names = {
         "_execute_app_launcher_command_legacy",
         "_execute_system_command_legacy",
         "_execute_file_command_legacy",
@@ -104,14 +104,42 @@ def test_legacy_delegate_methods_are_explicitly_marked():
         "_execute_browser_control_legacy",
     }
 
-    missing: list[str] = []
+    remaining = []
     for node in service_class.body:
-        if isinstance(node, ast.FunctionDef) and node.name in delegate_names:
-            segment = ast.get_source_segment(source, node) or ""
-            if "LEGACY DELEGATE: Only tool classes may call this." not in segment:
-                missing.append(node.name)
+        if isinstance(node, ast.FunctionDef) and node.name in removed_delegate_names:
+            remaining.append(node.name)
 
-    assert missing == []
+    assert remaining == []
+
+
+def test_tools_and_tests_do_not_call_or_patch_removed_automation_service_delegates():
+    removed_delegate_names = {
+        "_execute_app_launcher_command_legacy",
+        "_execute_system_command_legacy",
+        "_execute_file_command_legacy",
+        "_execute_whatsapp_command_legacy",
+        "_execute_browser_command_legacy",
+        "_execute_browser_control_legacy",
+    }
+    offenders: list[str] = []
+    for base in (ROOT / "app" / "tools", ROOT / "tests"):
+        for path in _python_files(base):
+            if path.name == "test_architecture_execution_boundaries.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            for name in removed_delegate_names:
+                if name in text:
+                    offenders.append(f"{path.relative_to(ROOT)} references {name}")
+
+    assert offenders == []
+
+
+def test_monolithic_automation_compatibility_mixin_has_been_removed():
+    assert not (ROOT / "app" / "services" / "automation_compatibility_mixins.py").exists()
+
+    source = (ROOT / "app" / "services" / "automation_service.py").read_text(encoding="utf-8")
+    assert "AutomationCompatibilityMixin" not in source
+    assert "automation_compatibility_mixins" not in source
 
 
 def test_config_app_is_not_imported_by_runtime_source():

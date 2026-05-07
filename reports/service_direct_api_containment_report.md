@@ -62,3 +62,19 @@ Date: 2026-05-06
 - `tests/test_architecture_execution_boundaries.py` now verifies high-level service facades do not contain dangerous direct execution imports/calls.
 - The same guard verifies `AutomationService.execute()` enters `_execute_facade()` and high-level routing methods do not construct connectors/adapters directly.
 - Connector/adapter construction remains allowed in compatibility facade constructors and tool wiring, but executable calls are still policy-gated through tools.
+
+## 2026-05-07 Delegate Migration Update
+
+- The six private AutomationService delegate methods for app/system/file/WhatsApp/browser command compatibility were removed from `AutomationService`.
+- Live-routed tools no longer call or patch `AutomationService._execute_*_legacy` methods.
+- Transitional command parsing now lives behind tool-owned compatibility runners in `app/tools/compatibility_runners.py`.
+- Broad compatibility helper methods were mechanically extracted to `app/services/automation_compatibility_mixins.py`; this is still a transitional service-side helper module, but the default executable route remains `AutomationService -> MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool`.
+- Guard coverage now fails if app tools or tests reintroduce references to the removed private AutomationService delegate names.
+
+## 2026-05-07 Domain Helper Split Update
+
+- `app/services/automation_compatibility_mixins.py` was deleted after the helper methods were split by domain.
+- Transitional service-side helper modules now isolate file, app/browser, system, and WhatsApp/message behavior separately.
+- Direct API containment is unchanged: high-level routing still enters `AutomationService -> MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool`; executable primitives remain behind tools/connectors/adapters or transitional compatibility helpers.
+- Remaining containment cleanup: move the new domain helper modules into their owning tools/connectors/adapters so `AutomationService` can stop inheriting compatibility helpers.
+- Verification after split: focused suite `133 passed, 1 warning, 60 subtests passed`; full `tests/` suite with cache disabled `667 passed, 413 subtests passed`.
