@@ -78,3 +78,21 @@ Date: 2026-05-06
 - Direct API containment is unchanged: high-level routing still enters `AutomationService -> MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool`; executable primitives remain behind tools/connectors/adapters or transitional compatibility helpers.
 - Remaining containment cleanup: move the new domain helper modules into their owning tools/connectors/adapters so `AutomationService` can stop inheriting compatibility helpers.
 - Verification after split: focused suite `133 passed, 1 warning, 60 subtests passed`; full `tests/` suite with cache disabled `667 passed, 413 subtests passed`.
+
+## 2026-05-07 Domain Helper Composition Update
+
+- `AutomationService` no longer inherits domain helper classes.
+- Domain helper composition is explicit through `file_domain`, `app_browser_domain`, `system_domain`, and `whatsapp_domain`.
+- Tool wiring receives those domain helpers rather than the full `AutomationService` object.
+- Direct API containment remains unchanged: policy and execution still flow through `MainOrchestrator -> PolicyEngine -> ToolExecutor -> ToolRegistry -> Tool`.
+- Verification after composition: focused suite `135 passed, 1 warning, 60 subtests passed`; full `tests/` suite with cache disabled `669 passed, 415 subtests passed`.
+
+## 2026-05-07 Domain Helper Promotion Update
+
+- The service-side domain helper files were removed from `app/services/` and are now tool-owned modules under `app/tools/`.
+- `AutomationService` was reduced to 704 LOC by extracting the remaining compatibility facade router into `app/tools/automation_facade_router.py`.
+- Direct API containment remains intact: the extracted router builds the same `ToolRegistry`, routes through `MainOrchestrator`, and relies on policy-enforced `ToolExecutor` execution.
+- Tool construction still receives transitional domain helper objects; this is the next containment cleanup blocker before helpers can be split fully into parsers/connectors/adapters.
+- Guard coverage now checks that service-side domain compatibility files do not return.
+- Focused promotion suite: `136 passed, 1 warning, 60 subtests passed`.
+- Full `tests/` command with cache disabled: `670 passed, 405 subtests passed in 62.46s`.

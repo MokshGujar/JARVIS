@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.runtime_observability import log_boundary
+from app.services.clarification_service import ClarificationService
 from app.services.automation_file_ops import move_to_recycle_bin
 from app.services.command_risk_service import CommandRiskService
 from app.services.automation_response import normalize_automation_response
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+from app.tools.compatibility_runners import FileCompatibilityRunner
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +61,15 @@ class FileTool(BaseTool):
                 re.compile(r"^(?:(?:preview\s+)?organize|organize\s+preview)\b", re.I),
             ),
         ),
-        ("search", "A", (re.compile(r"^find\s+", re.I),)),
+        (
+            "search",
+            "A",
+            (
+                re.compile(r"^find\s+", re.I),
+                re.compile(r"^(?:can\s+you\s+)?(?:please\s+)?search\s+(?:a\s+)?file(?:\s+for\s+me)?[.!?]*$", re.I),
+                re.compile(r"^(?:search\s+(?:my\s+)?files?|search\s+local\s+files?|search\s+in\s+files?|look\s+in\s+my\s+files?|look\s+for\s+(?:a\s+)?file|search\s+(?:my\s+)?(?:laptop|computer|pc)|search\s+(?:desktop|documents|downloads|home))\b", re.I),
+            ),
+        ),
         ("read", "B", (re.compile(r"^(?:read|show|display)(?:\s+me)?\s+(?:the\s+)?(?:file|text\s+file)\b", re.I),)),
         (
             "create",
@@ -87,7 +97,7 @@ class FileTool(BaseTool):
     )
 
     def __init__(self, automation_bridge: Any | None = None, *, risk_service: CommandRiskService | None = None) -> None:
-        self.automation_bridge = automation_bridge
+        self.automation_bridge = getattr(automation_bridge, "file_domain", automation_bridge)
         self.risk_service = risk_service or CommandRiskService()
 
     def can_handle(self, intent: str) -> bool:
@@ -118,29 +128,30 @@ class FileTool(BaseTool):
         return {"_safe_roots": safe_roots}
 
     def execute(self, context: ToolContext) -> dict[str, Any]:
-        planned_action = str(context.payload.get("action") or "").strip()
+        planned_step = context.payload.get("planned_step") if isinstance(context.payload.get("planned_step"), dict) else {}
+        planned_action = str(context.payload.get("action") or planned_step.get("action") or "").strip()
         action_name = planned_action or "legacy_command"
         if planned_action:
             planned_result = self._execute_planned_action(planned_action, dict(context.payload.get("args") or {}))
             if planned_result is not None:
                 planned_result["tool_name"] = self.name
-                log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="native" if planned_action else "legacy_delegate", status=self._result_status(planned_result), target=planned_result.get("path") or "")
+                log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="native" if planned_action else "file_compatibility_runner", status=self._result_status(planned_result), target=planned_result.get("path") or "")
                 return planned_result
 
         operation = self.operation_for(context.command)
         if operation is None and not self.can_handle(context.intent):
             return None
-        if self.automation_bridge and hasattr(self.automation_bridge, "_execute_file_command_legacy"):
-            result = self.automation_bridge._execute_file_command_legacy(context.command, context=context)
+        if self.automation_bridge:
+            result = FileCompatibilityRunner(self.automation_bridge).execute(context.command, context=context)
             if result is None:
                 return None
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
             normalized["file_operation"] = operation
-            log_boundary(logger, "TOOL", name="FileTool", action=(operation or {}).get("operation") or action_name, delegate="legacy_delegate", status=self._result_status(normalized), target=context.command)
+            log_boundary(logger, "TOOL", name="FileTool", action=(operation or {}).get("operation") or action_name, delegate="file_compatibility_runner", status=self._result_status(normalized), target=context.command)
             return normalized
         result = {"success": False, "action": "unsupported", "message": "File tool is not wired yet."}
-        log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
+        log_boundary(logger, "TOOL", name="FileTool", action=action_name, delegate="file_compatibility_runner", status="failed", target="")
         return result
 
     def _execute_planned_action(self, action: str, args: dict[str, Any]) -> dict[str, Any] | None:
@@ -356,17 +367,18 @@ class FileTool(BaseTool):
 
     def _planned_search_files(self, args: dict[str, Any]) -> dict[str, Any]:
         query = str(args.get("query") or "").strip()
-        if not query:
-            return {
-                "success": False,
-                "action": "search_files",
-                "status": "clarification_required",
-                "message": "What file name or content should I search for?",
-                "requires_followup": True,
-                "missing_query": True,
-            }
+        if not query and not bool(args.get("recent") or args.get("large")):
+            result = ClarificationService.build("missing_file_query", "What file name or content should I search for?")
+            result["action"] = "search_files"
+            result["missing_query"] = True
+            return result
         return normalize_automation_response(
-            self.automation_bridge._find_files(query, str(args.get("folder") or args.get("location") or "home"))
+            self.automation_bridge._find_files(
+                query or "*",
+                str(args.get("folder") or args.get("location") or "home"),
+                recent=bool(args.get("recent")),
+                large=bool(args.get("large")),
+            )
         )
 
     @staticmethod

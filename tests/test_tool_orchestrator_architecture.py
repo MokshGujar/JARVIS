@@ -1,7 +1,7 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.connectors.local_files_connector import LocalFilesConnector
 from app.orchestrator.intent_router import IntentRouter
@@ -81,9 +81,8 @@ class ToolOrchestratorArchitectureTests(unittest.TestCase):
         self.assertFalse(restart_policy.requires_face_step_up)
         self.assertTrue(restart_policy.requires_voice_permission)
 
-    def test_file_tool_groups_operations_and_delegates_to_legacy_bridge(self):
+    def test_file_tool_groups_operations_and_delegates_to_file_compatibility_runner(self):
         bridge = Mock()
-        bridge._execute_file_command_legacy.return_value = {"success": True, "action": "list_files", "message": "Files in Downloads:"}
         tool = FileTool(bridge)
 
         self.assertEqual(tool.operation_for("list files in downloads")["group"], "A")
@@ -92,11 +91,16 @@ class ToolOrchestratorArchitectureTests(unittest.TestCase):
         self.assertEqual(tool.operation_for("rename file a.txt to b.txt")["group"], "D")
         self.assertEqual(tool.operation_for("delete file notes.txt")["group"], "E")
 
-        result = tool.execute(ToolContext(command="list files in downloads", intent="file"))
+        with patch(
+            "app.tools.compatibility_runners.FileCompatibilityRunner.execute",
+            return_value={"success": True, "action": "list_files", "message": "Files in Downloads:"},
+        ) as runner:
+            result = tool.execute(ToolContext(command="list files in downloads", intent="file"))
 
         self.assertEqual(result["action"], "list_files")
         self.assertEqual(result["tool_name"], "file")
-        bridge._execute_file_command_legacy.assert_called_once()
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "list files in downloads")
 
     def test_main_orchestrator_selects_file_tool(self):
         tool = Mock()
@@ -115,29 +119,35 @@ class ToolOrchestratorArchitectureTests(unittest.TestCase):
 
     def test_main_orchestrator_selects_app_tool(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {"success": True, "action": "open", "message": "Opening notepad."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([AppTool(bridge)]), enforce_policy=False)
 
-        result = orchestrator.execute_text("open notepad")
+        with patch(
+            "app.tools.compatibility_runners.AppCompatibilityRunner.execute",
+            return_value={"success": True, "action": "open", "message": "Opening notepad."},
+        ) as runner:
+            result = orchestrator.execute_text("open notepad")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["selected_tool"], "app")
         self.assertEqual(result["scenario"], "app.open")
         self.assertEqual(result["policy"]["decision"], "ALLOW")
         self.assertTrue(result.get("semantic_execution"))
-        bridge._execute_app_launcher_command_legacy.assert_called_once()
+        runner.assert_called_once()
 
     def test_main_orchestrator_selects_system_tool(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {"success": True, "action": "system", "message": "Done volume up."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=False)
 
-        result = orchestrator.execute_text("volume up")
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "system", "message": "Done volume up."},
+        ) as runner:
+            result = orchestrator.execute_text("volume up")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["selected_tool"], "system")
         self.assertEqual(result["scenario"], "system.volume_up")
-        bridge._execute_system_command_legacy.assert_called_once()
+        runner.assert_called_once()
 
     def test_main_orchestrator_blocks_delete_without_confirmation_and_then_requires_voice_permission(self):
         tool = Mock()
@@ -169,28 +179,34 @@ class ToolOrchestratorArchitectureTests(unittest.TestCase):
 
     def test_main_orchestrator_blocks_high_app_close_without_confirmation(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {"success": True, "action": "close", "message": "Closing notepad."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([AppTool(bridge)]), enforce_policy=True)
 
-        blocked = orchestrator.execute_text("close notepad")
-        allowed = orchestrator.execute(ToolContext(command="close notepad", confirmation_state={"confirmed": True}))
+        with patch(
+            "app.tools.compatibility_runners.AppCompatibilityRunner.execute",
+            return_value={"success": True, "action": "close", "message": "Closing notepad."},
+        ) as runner:
+            blocked = orchestrator.execute_text("close notepad")
+            allowed = orchestrator.execute(ToolContext(command="close notepad", confirmation_state={"confirmed": True}))
 
         self.assertEqual(blocked["action"], "confirmation_required")
         self.assertFalse(blocked["requires_face_step_up"])
         self.assertTrue(allowed["success"])
-        self.assertEqual(bridge._execute_app_launcher_command_legacy.call_count, 1)
+        self.assertEqual(runner.call_count, 1)
 
     def test_main_orchestrator_blocks_critical_restart_without_voice_permission(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {"success": True, "action": "system", "message": "Restarting."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-        blocked = orchestrator.execute(ToolContext(command="restart laptop", confirmation_state={"confirmed": True}))
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "system", "message": "Restarting."},
+        ) as runner:
+            blocked = orchestrator.execute(ToolContext(command="restart laptop", confirmation_state={"confirmed": True}))
 
         self.assertEqual(blocked["action"], "auth_required")
         self.assertFalse(blocked["requires_face_step_up"])
         self.assertTrue(blocked["auth"]["voice_permission_required"])
-        bridge._execute_system_command_legacy.assert_not_called()
+        runner.assert_not_called()
 
     def test_local_files_connector_refuses_silent_overwrite(self):
         connector = LocalFilesConnector()

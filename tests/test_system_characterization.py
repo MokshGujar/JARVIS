@@ -25,7 +25,7 @@ class SystemCharacterizationTests(unittest.TestCase):
                 result = service.execute(command)
                 self.assertTrue(result["success"])
                 self.assertEqual(result["action"], "system")
-                self.assertEqual(result["message"], f"Done {service._match_system_command(command) or command}.")
+                self.assertEqual(result["message"], f"Done {service.system_domain._match_system_command(command) or command}.")
                 service.computer_control_service.hotkey.assert_called_once_with(hotkey.split("+"))
 
     def test_keyboard_unavailable_fails_closed(self):
@@ -103,3 +103,4 @@ class SystemCharacterizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

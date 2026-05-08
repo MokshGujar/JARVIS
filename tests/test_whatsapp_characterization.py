@@ -50,29 +50,26 @@ class WhatsAppCharacterizationTests(unittest.TestCase):
         self.assertEqual(result["actions"][0]["status"], "whatsapp_login_required")
         self.assertIn("not logged in", result["message"].lower())
 
-    def test_call_staging_sets_pending_action_without_step_up(self):
+    def test_call_with_contact_missing_phone_asks_without_step_up(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Rahul", contact_id="r1")])
 
         result = service.execute("call Rahul on WhatsApp")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "whatsapp_call_pending")
-        self.assertEqual(service._pending_mark_action["kind"], "whatsapp_call")
-        self.assertEqual(service._pending_mark_action["payload"]["contact"], "Rahul")
+        self.assertEqual(result["action"], "whatsapp_missing_phone")
+        self.assertIsNone(service._pending_mark_action)
         self.assertFalse(result["requires_step_up"])
 
-    def test_message_staging_sets_pending_action_without_step_up(self):
+    def test_message_with_contact_missing_phone_asks_without_step_up(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Aman", contact_id="a1")])
 
         result = service.execute("message Aman hello")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "send_message_pending")
-        self.assertEqual(service._pending_mark_action["kind"], "send_message")
-        self.assertEqual(service._pending_mark_action["payload"]["receiver"], "Aman")
-        self.assertEqual(service._pending_mark_action["payload"]["message"], "hello")
+        self.assertEqual(result["action"], "whatsapp_missing_phone")
+        self.assertIsNone(service._pending_mark_action)
 
     def test_fuzzy_contact_confirmation_precedes_action_confirmation(self):
         service = AutomationService()
@@ -86,6 +83,20 @@ class WhatsAppCharacterizationTests(unittest.TestCase):
         self.assertEqual(result["message"], "I found Hetanshi India. Did you mean Hetanshi India?")
         self.assertIsNone(service._pending_mark_action)
         self.assertIsNotNone(service._pending_whatsapp_clarification)
+
+    def test_stt_variant_requires_contact_confirmation_before_whatsapp_send(self):
+        service = AutomationService()
+        service.whatsapp_desktop = Mock()
+        service.set_whatsapp_contacts_provider(
+            lambda: [ContactCandidate(display_name="Hetanshi India", contact_id="h1", phone_number="+919999999999")]
+        )
+
+        result = service.execute("Send WhatsApp message to Hitanchi India saying hello")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["action"], "whatsapp_contact_fuzzy")
+        self.assertIn("Did you mean Hetanshi India", result["message"])
+        service.whatsapp_desktop.send_message.assert_not_called()
 
     def test_multiple_matches_ask_which_contact(self):
         service = AutomationService()
@@ -112,15 +123,14 @@ class WhatsAppCharacterizationTests(unittest.TestCase):
         self.assertIn("couldn't find", result["message"].lower())
         self.assertIsNone(service._pending_mark_action)
 
-    def test_cancel_pending_call_clears_confirmation(self):
+    def test_cancel_without_pending_call_does_not_execute(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Suhani", contact_id="s1")])
         service.execute("call Suhani on WhatsApp")
 
         result = service.execute("no")
 
-        self.assertTrue(result["success"])
-        self.assertEqual(result["action"], "confirmation_cancelled")
+        self.assertFalse(result["success"])
         self.assertIsNone(service._pending_mark_action)
 
     def test_verified_call_start_returns_calling_status(self):
@@ -128,34 +138,65 @@ class WhatsAppCharacterizationTests(unittest.TestCase):
         service.whatsapp_desktop = Mock()
         service.whatsapp_desktop.start_call.return_value = {"success": True, "status": "whatsapp_calling", "message": "started"}
 
-        result = service._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
 
         self.assertTrue(result["success"])
         self.assertEqual(result["message"], "Calling Hetanshi India...")
         self.assertEqual(result["actions"][0]["status"], "whatsapp_calling")
 
+    def test_clear_whatsapp_send_executes_directly_after_policy_allow(self):
+        service = AutomationService()
+        service.whatsapp_desktop = Mock()
+        service.whatsapp_desktop.send_message.return_value = {"success": True, "status": "whatsapp_message_sent", "message": "sent"}
+        service.set_whatsapp_contacts_provider(lambda: [
+            ContactCandidate(display_name="Hetanshi India", contact_id="h1", phone_number="+919999999999")
+        ])
+
+        result = service.execute("Send WhatsApp message to Hetanshi India saying hello")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["direct_policy"]["decision"], "ALLOW")
+        self.assertEqual(result["direct_policy"]["reason"], "explicit_user_command_confident_contact")
+        service.whatsapp_desktop.send_message.assert_called_once_with("+919999999999", "hello")
+        self.assertIsNone(service._pending_mark_action)
+
+    def test_clear_whatsapp_call_executes_directly_after_policy_allow(self):
+        service = AutomationService()
+        service.whatsapp_desktop = Mock()
+        service.whatsapp_desktop.start_call.return_value = {"success": True, "status": "whatsapp_calling", "message": "started"}
+        service.set_whatsapp_contacts_provider(lambda: [
+            ContactCandidate(display_name="Hetanshi India", contact_id="h1", phone_number="+919999999999")
+        ])
+
+        result = service.execute("Call Hetanshi India on WhatsApp")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["direct_policy"]["decision"], "ALLOW")
+        self.assertEqual(result["direct_policy"]["reason"], "explicit_user_command_confident_contact")
+        service.whatsapp_desktop.start_call.assert_called_once_with("+919999999999", "voice")
+        self.assertIsNone(service._pending_mark_action)
+
     def test_selector_failure_fails_closed(self):
         service = AutomationService()
-        service._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
-        service._click_verified_whatsapp_call_button = Mock(return_value=False)
+        service.app_browser_domain._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
+        service.whatsapp_domain._click_verified_whatsapp_call_button = Mock(return_value=False)
 
-        result = service._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
 
         self.assertFalse(result["success"])
         self.assertEqual(result["actions"][0]["status"], "whatsapp_desktop_unverified")
         self.assertIn("did not start the call", result["message"])
 
-    def test_confirmation_text_does_not_require_fresh_step_up(self):
+    def test_missing_phone_does_not_stage_confirmation_text(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Rahul", contact_id="r1")])
         service.execute("call Rahul on WhatsApp")
 
         auth_text = service.pending_authorization_text("yes")
-        risk = CommandRiskService().classify(auth_text, command_action="automation")
 
-        self.assertIn("voice call Rahul on whatsapp", auth_text)
-        self.assertFalse(risk.step_up_required)
+        self.assertIsNone(auth_text)
 
 
 if __name__ == "__main__":
     unittest.main()
+

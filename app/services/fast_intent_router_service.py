@@ -40,7 +40,7 @@ class FastIntentRouterService:
     )
     _QUESTION_RE = re.compile(r"\b(what|why|how|who|when|where|explain|tell me about)\b", re.IGNORECASE)
     _ACTION_RE = re.compile(
-        r"\b(open|launch|start|play|call|dial|phone|message|text|sms|whatsapp|"
+        r"\b(open|launch|start|play|call|dial|phone|message|text|sms|whatsapp|email|gmail|mail|"
         r"delete|remove|shutdown|shut down|sleep|lock)\b",
         re.IGNORECASE,
     )
@@ -99,6 +99,9 @@ class FastIntentRouterService:
         whatsapp_route = self._whatsapp_automation_route(text, lowered)
         if whatsapp_route:
             return done(whatsapp_route)
+
+        if self.automation_service and re.search(r"\b(?:gmail|email|mail)\b", lowered) and re.search(r"\b(?:send|draft|compose|write|reply|search|read|unread)\b", lowered):
+            return done(self._instant_route(intent="automation", confidence=0.9, safe_to_execute=True, reason="gmail_communication"))
 
         phone_route = self._phone_route(text, lowered)
         if phone_route:

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.orchestrator.intent_router import IntentRouter
 from app.orchestrator.main_orchestrator import MainOrchestrator
@@ -71,75 +71,74 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         self.assertFalse(restart_policy.requires_face_step_up)
         self.assertTrue(restart_policy.requires_voice_permission)
 
-    def test_system_tool_delegates_to_legacy_system_bridge(self):
+    def test_system_tool_delegates_to_system_compatibility_runner(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {
-            "success": True,
-            "action": "system",
-            "message": "Done volume up.",
-        }
         tool = SystemTool(bridge)
 
-        result = tool.execute(ToolContext(command="volume up", intent="volume_up"))
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "system", "message": "Done volume up."},
+        ) as runner:
+            result = tool.execute(ToolContext(command="volume up", intent="volume_up"))
 
         self.assertTrue(result["success"])
         self.assertEqual(result["action"], "system")
-        bridge._execute_system_command_legacy.assert_called_once_with("volume up")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "volume up")
 
     def test_main_orchestrator_selects_system_tool_and_allows_low_actions(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {
-            "success": True,
-            "action": "computer_control",
-            "message": "Screenshot saved",
-        }
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-        result = orchestrator.execute_text("take screenshot")
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "computer_control", "message": "Screenshot saved"},
+        ) as runner:
+            result = orchestrator.execute_text("take screenshot")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["selected_tool"], "system")
         self.assertEqual(result["scenario"], "system.screenshot")
         self.assertEqual(result["policy"]["safety_level"], "LOW")
-        bridge._execute_system_command_legacy.assert_called_once_with("take screenshot")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "take screenshot")
 
     def test_status_phrases_route_to_system_tool(self):
         for command in ("Show system status", "Give me system updates", "system health"):
             with self.subTest(command=command):
                 bridge = Mock()
-                bridge._execute_system_command_legacy.return_value = {
-                    "success": True,
-                    "action": "safe_command_info",
-                    "message": "System OK",
-                }
                 orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-                result = orchestrator.execute_text(command)
+                with patch(
+                    "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+                    return_value={"success": True, "action": "safe_command_info", "message": "System OK"},
+                ) as runner:
+                    result = orchestrator.execute_text(command)
 
                 self.assertTrue(result["success"])
                 self.assertEqual(result["selected_tool"], "system")
                 self.assertEqual(result["scenario"], "system.safe_system_info")
                 self.assertEqual(result["policy"]["safety_level"], "LOW")
-                bridge._execute_system_command_legacy.assert_called_once_with(command)
+                runner.assert_called_once()
+                self.assertEqual(runner.call_args.args[0], command)
 
     def test_lock_system_is_blocked_without_confirmation(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {
-            "success": True,
-            "action": "computer_settings",
-            "message": "Locked the screen.",
-        }
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-        blocked = orchestrator.execute_text("lock my laptop")
-        needs_voice_permission = orchestrator.execute(ToolContext(command="lock my laptop", confirmation_state={"confirmed": True}))
-        allowed = orchestrator.execute(
-            ToolContext(
-                command="lock my laptop",
-                confirmation_state={"confirmed": True},
-                security_state={"voice_permission_granted": True},
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "computer_settings", "message": "Locked the screen."},
+        ) as runner:
+            blocked = orchestrator.execute_text("lock my laptop")
+            needs_voice_permission = orchestrator.execute(ToolContext(command="lock my laptop", confirmation_state={"confirmed": True}))
+            allowed = orchestrator.execute(
+                ToolContext(
+                    command="lock my laptop",
+                    confirmation_state={"confirmed": True},
+                    security_state={"voice_permission_granted": True},
+                )
             )
-        )
 
         self.assertEqual(blocked["action"], "confirmation_required")
         self.assertFalse(blocked["requires_face_step_up"])
@@ -147,26 +146,26 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         self.assertFalse(needs_voice_permission["requires_face_step_up"])
         self.assertTrue(needs_voice_permission["requires_voice_permission"])
         self.assertTrue(allowed["success"])
-        bridge._execute_system_command_legacy.assert_called_once_with("lock my laptop")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "lock my laptop")
 
     def test_shutdown_system_requires_confirmation_and_voice_permission(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {
-            "success": True,
-            "action": "computer_settings",
-            "message": "Shutting down.",
-        }
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-        needs_confirmation = orchestrator.execute_text("shutdown laptop")
-        needs_voice_permission = orchestrator.execute(ToolContext(command="shutdown laptop", confirmation_state={"confirmed": True}))
-        allowed = orchestrator.execute(
-            ToolContext(
-                command="shutdown laptop",
-                confirmation_state={"confirmed": True},
-                security_state={"voice_permission_granted": True},
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "computer_settings", "message": "Shutting down."},
+        ) as runner:
+            needs_confirmation = orchestrator.execute_text("shutdown laptop")
+            needs_voice_permission = orchestrator.execute(ToolContext(command="shutdown laptop", confirmation_state={"confirmed": True}))
+            allowed = orchestrator.execute(
+                ToolContext(
+                    command="shutdown laptop",
+                    confirmation_state={"confirmed": True},
+                    security_state={"voice_permission_granted": True},
+                )
             )
-        )
 
         self.assertEqual(needs_confirmation["action"], "confirmation_required")
         self.assertFalse(needs_confirmation["requires_face_step_up"])
@@ -175,26 +174,26 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         self.assertFalse(needs_voice_permission["requires_face_step_up"])
         self.assertTrue(needs_voice_permission["auth"]["voice_permission_required"])
         self.assertTrue(allowed["success"])
-        bridge._execute_system_command_legacy.assert_called_once_with("shutdown laptop")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "shutdown laptop")
 
     def test_restart_system_requires_confirmation_and_voice_permission(self):
         bridge = Mock()
-        bridge._execute_system_command_legacy.return_value = {
-            "success": True,
-            "action": "computer_settings",
-            "message": "Restarting.",
-        }
         orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-        needs_confirmation = orchestrator.execute_text("restart laptop")
-        needs_voice_permission = orchestrator.execute(ToolContext(command="restart laptop", confirmation_state={"confirmed": True}))
+        with patch(
+            "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
+            return_value={"success": True, "action": "computer_settings", "message": "Restarting."},
+        ) as runner:
+            needs_confirmation = orchestrator.execute_text("restart laptop")
+            needs_voice_permission = orchestrator.execute(ToolContext(command="restart laptop", confirmation_state={"confirmed": True}))
 
         self.assertEqual(needs_confirmation["action"], "confirmation_required")
         self.assertFalse(needs_confirmation["requires_face_step_up"])
         self.assertTrue(needs_confirmation["requires_voice_permission"])
         self.assertEqual(needs_voice_permission["action"], "auth_required")
         self.assertFalse(needs_voice_permission["requires_face_step_up"])
-        bridge._execute_system_command_legacy.assert_not_called()
+        runner.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from app.utils.runtime_observability import log_boundary
 from app.services.automation_response import normalize_automation_response
 from app.services.command_risk_service import CommandRiskService
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+from app.tools.compatibility_runners import BrowserCompatibilityRunner
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class BrowserTool(BaseTool):
         risk_service: CommandRiskService | None = None,
     ) -> None:
         self.connector = connector
-        self.automation_bridge = automation_bridge
+        self.automation_bridge = getattr(automation_bridge, "app_browser_domain", automation_bridge)
         self.risk_service = risk_service or CommandRiskService()
 
     def can_handle(self, intent: str) -> bool:
@@ -60,17 +61,17 @@ class BrowserTool(BaseTool):
             planned_result = self._execute_planned_action(planned_action, dict(context.payload.get("args") or {}), context=context)
             if planned_result is not None:
                 planned_result["tool_name"] = self.name
-                delegate = "legacy_delegate" if self.automation_bridge is not None else "connector"
+                delegate = "browser_compatibility_runner" if self.automation_bridge is not None else "connector"
                 log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate=delegate, status="success" if planned_result.get("success") else "failed", target=planned_result.get("query") or planned_result.get("url") or "")
                 return planned_result
 
-        if self.automation_bridge and hasattr(self.automation_bridge, "_execute_browser_command_legacy"):
-            result = self.automation_bridge._execute_browser_command_legacy(context.command, context=context)
+        if self.automation_bridge:
+            result = BrowserCompatibilityRunner(self.automation_bridge).execute(context.command, context=context)
             if result is None:
                 return None
             normalized = normalize_automation_response(result)
             normalized["tool_name"] = self.name
-            log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate="legacy_delegate", status="success" if normalized.get("success") else "failed", target=context.command)
+            log_boundary(logger, "TOOL", name="BrowserTool", action=action_name, delegate="browser_compatibility_runner", status="success" if normalized.get("success") else "failed", target=context.command)
             return normalized
 
         if self.connector is None:
@@ -118,8 +119,8 @@ class BrowserTool(BaseTool):
             query = self._normalize_search_query(args.get("query"))
             if not query:
                 return {"success": False, "action": "search", "message": "Tell me what to search for."}
-            if self.automation_bridge and hasattr(self.automation_bridge, "_execute_browser_command_legacy"):
-                result = self.automation_bridge._execute_browser_command_legacy(f"search {query} on google", context=context)
+            if self.automation_bridge:
+                result = BrowserCompatibilityRunner(self.automation_bridge).execute(f"search {query} on google", context=context)
                 if result is None:
                     return None
                 return normalize_automation_response(result)
@@ -131,8 +132,8 @@ class BrowserTool(BaseTool):
             target = str(args.get("url") or args.get("site") or "").strip()
             if not target:
                 return {"success": False, "action": action, "message": "Tell me which site to open."}
-            if self.automation_bridge and hasattr(self.automation_bridge, "_execute_browser_command_legacy"):
-                result = self.automation_bridge._execute_browser_command_legacy(f"open {target}", context=context)
+            if self.automation_bridge:
+                result = BrowserCompatibilityRunner(self.automation_bridge).execute(f"open {target}", context=context)
                 if result is None:
                     return None
                 return normalize_automation_response(result)

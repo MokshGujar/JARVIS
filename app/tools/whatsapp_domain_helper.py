@@ -5,12 +5,14 @@ import os
 import re
 import time
 import urllib.parse
+import hashlib
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
 from config import BASE_DIR as CONFIG_BASE_DIR
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.tool_executor import ToolExecutor
+from app.tools.automation_domain_helper import ServiceBackedDomainHelper
 from app.services.contact_match_service import ContactCandidate, ContactMatchService
 from app.services.message_action_service import MessageActionService
 from app.tools.base import ToolContext
@@ -36,7 +38,7 @@ def _runtime_base_dir() -> Path:
 
 
 
-class AutomationWhatsAppCompatibility:
+class AutomationWhatsAppCompatibility(ServiceBackedDomainHelper):
 
     def _handle_mark_confirmation(self, command: str) -> Dict[str, str | bool]:
             pending = self._pending_mark_action
@@ -93,6 +95,7 @@ class AutomationWhatsAppCompatibility:
                     session_id=self._active_session_id,
                     request_id=self._active_turn_id,
                     payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                    source=self._active_request_source,
                     confirmation_state={"confirmed": True},
                     security_state={"step_up_verified": self._active_step_up_verified},
                 ),
@@ -103,6 +106,8 @@ class AutomationWhatsAppCompatibility:
     def _whatsapp_pending_command(action: str, payload: dict[str, object]) -> str:
             if action == "send_message":
                 return f"send whatsapp message to {payload.get('receiver') or 'contact'}"
+            if action == "open_chat":
+                return f"open whatsapp chat with {payload.get('contact') or 'contact'}"
             if action == "start_video_call":
                 return f"video call {payload.get('contact') or 'contact'} on whatsapp"
             return f"voice call {payload.get('contact') or 'contact'} on whatsapp"
@@ -111,6 +116,7 @@ class AutomationWhatsAppCompatibility:
     def _looks_like_whatsapp_command(self, lowered: str) -> bool:
             return bool(
                 lowered.startswith(("open whatsapp", "whatsapp web", "whatsapp desktop", "search contact in whatsapp", "end call"))
+                or self._extract_whatsapp_open_chat_intent(lowered) is not None
                 or self._extract_whatsapp_call_intent(lowered) is not None
                 or self._extract_whatsapp_message_intent(lowered) is not None
             )
@@ -125,6 +131,7 @@ class AutomationWhatsAppCompatibility:
     def _extract_whatsapp_call_intent(self, command: str) -> dict[str, str] | None:
             text = self._normalize_spoken_command(command).strip()
             patterns = (
+                r"^(?:make\s+(?:a\s+)?)(?:whatsapp\s+)?(?P<mode>video\s+call|voice\s+call|call)\s+to\s+(?P<contact>.+?)(?:\s+(?:on|via|using)\s+whatsapp)?[.!?]*$",
                 r"^(?:tell\s+jarvis\s+to\s+)(?:whatsapp\s+)?(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)(?:\s+(?:on|via|using)\s+whatsapp)?[.!?]*$",
                 r"^(?:whatsapp\s+)?(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)(?:\s+(?:on|via|using)\s+whatsapp)?[.!?]*$",
                 r"^(?P<mode>video\s+call|voice\s+call|call)\s+(?P<contact>.+?)\s+(?:on|via|using)\s+whatsapp[.!?]*$",
@@ -135,6 +142,19 @@ class AutomationWhatsAppCompatibility:
                     mode = "video" if "video" in match.group("mode").lower() else "voice"
                     contact = self._clean_whatsapp_contact(match.group("contact"))
                     return {"mode": mode, "contact": contact}
+            return None
+
+
+    def _extract_whatsapp_open_chat_intent(self, command: str) -> dict[str, str] | None:
+            text = self._normalize_spoken_command(command).strip()
+            patterns = (
+                r"^open\s+whatsapp\s+chat\s+with\s+(?P<contact>.+?)[.!?]*$",
+                r"^open\s+chat\s+with\s+(?P<contact>.+?)\s+(?:on|via|using)\s+whatsapp[.!?]*$",
+            )
+            for pattern in patterns:
+                match = re.match(pattern, text, flags=re.IGNORECASE)
+                if match:
+                    return {"contact": self._clean_whatsapp_contact(match.group("contact"))}
             return None
 
 
@@ -205,7 +225,7 @@ class AutomationWhatsAppCompatibility:
             payload = dict(payload or {})
             self._pending_whatsapp_clarification = {"kind": kind, "payload": payload}
             is_message = kind in {"send_message", "send_message_text"}
-            prompt = "Who should I message on WhatsApp?" if is_message else "Who should I call on WhatsApp?"
+            prompt = "Who should I message on WhatsApp?" if is_message else "Which WhatsApp chat should I open?" if kind == "open_chat" else "Who should I call on WhatsApp?"
             return self._status_result(
                 "whatsapp_contact_required",
                 prompt,
@@ -275,6 +295,15 @@ class AutomationWhatsAppCompatibility:
                     success=False,
                     status="whatsapp_contact_required",
                 )
+            if decision["status"] == "missing_channel":
+                contact = dict(decision.get("contact") or {})
+                display_name = str(contact.get("display_name") or query).strip()
+                return self._status_result(
+                    "whatsapp_missing_phone",
+                    f"I found {display_name}, but that contact has no phone number for WhatsApp.",
+                    success=False,
+                    status="whatsapp_missing_phone",
+                )
             if decision["status"] == "confirm_contact":
                 contact = dict(decision["contact"])
                 message = str(decision.get("message") or f"I found {contact.get('display_name')}. Did you mean {contact.get('display_name')}?")
@@ -298,19 +327,24 @@ class AutomationWhatsAppCompatibility:
 
             contact = dict(decision["contact"])
             display_name = str(contact.get("display_name") or query).strip()
-            pending = {
+            payload = {
                 "mode": mode,
                 "contact": display_name,
                 "contact_id": str(contact.get("contact_id") or "").strip(),
                 "phone_number": str(contact.get("phone_number") or "").strip(),
                 "match_confidence": contact.get("score"),
                 "match_reason": str(contact.get("reason") or "").strip(),
+                "contact_hash": self._safe_contact_hash(display_name),
+                "direct_user_requested": True,
+                "recipient_confident": True,
+                "fresh_user_command": True,
+                "user_initiated": self._active_request_source in {"user", "text", "voice"},
+                "single_recipient": True,
+                "bulk": False,
                 "risk_level": "HIGH_RISK",
                 "expires_at": time.time() + 90,
             }
-            result = self._whatsapp_call_pending_result(mode, display_name)
-            result["pending"] = pending
-            return result
+            return self._execute_direct_whatsapp_action("start_video_call" if mode == "video" else "start_voice_call", payload)
 
 
     def _prepare_whatsapp_message_confirmation(self, receiver_query: str, message_text: str) -> Dict[str, object]:
@@ -343,6 +377,15 @@ class AutomationWhatsAppCompatibility:
                     success=False,
                     status="whatsapp_contact_required",
                 )
+            if decision["status"] == "missing_channel":
+                contact = dict(decision.get("contact") or {})
+                display_name = str(contact.get("display_name") or receiver_query).strip()
+                return self._status_result(
+                    "whatsapp_missing_phone",
+                    f"I found {display_name}, but that contact has no phone number for WhatsApp.",
+                    success=False,
+                    status="whatsapp_missing_phone",
+                )
             if decision["status"] == "confirm_contact":
                 contact = dict(decision["contact"])
                 message = str(decision.get("message") or f"I found {contact.get('display_name')}. Did you mean {contact.get('display_name')}?")
@@ -365,7 +408,96 @@ class AutomationWhatsAppCompatibility:
                 )
 
             contact = dict(decision["contact"])
-            return self._whatsapp_message_pending_result(contact, message_text, receiver_query)
+            display_name = str(contact.get("display_name") or receiver_query).strip()
+            payload = {
+                "platform": "whatsapp",
+                "receiver": display_name,
+                "message": message_text,
+                "contact_id": str(contact.get("contact_id") or "").strip(),
+                "phone_number": str(contact.get("phone_number") or "").strip(),
+                "match_confidence": contact.get("score"),
+                "match_reason": str(contact.get("reason") or "").strip(),
+                "contact_hash": self._safe_contact_hash(display_name),
+                "direct_user_requested": True,
+                "recipient_confident": True,
+                "fresh_user_command": True,
+                "user_initiated": self._active_request_source in {"user", "text", "voice"},
+                "single_recipient": True,
+                "bulk": False,
+                "risk_level": "HIGH_RISK",
+                "expires_at": time.time() + 90,
+            }
+            return self._execute_direct_whatsapp_action("send_message", payload)
+
+
+    def _prepare_whatsapp_open_chat(self, query: str) -> Dict[str, object]:
+            decision = self._resolve_whatsapp_contact(query)
+            if decision["status"] == "not_found":
+                return self._status_result("whatsapp_contact_not_found", str(decision["message"]), success=False, status="whatsapp_contact_not_found")
+            if decision["status"] == "clarify":
+                return self._status_result("whatsapp_contact_ambiguous", str(decision["message"]), success=False, status="whatsapp_contact_required")
+            if decision["status"] == "confirm_contact":
+                contact = dict(decision["contact"])
+                return self._status_result(
+                    "whatsapp_contact_fuzzy",
+                    str(decision.get("message") or f"I found {contact.get('display_name')}. Did you mean {contact.get('display_name')}?"),
+                    success=False,
+                    status="whatsapp_contact_fuzzy",
+                )
+            contact = dict(decision["contact"])
+            display_name = str(contact.get("display_name") or query).strip()
+            payload = {
+                "contact": display_name,
+                "phone_number": str(contact.get("phone_number") or "").strip(),
+                "contact_id": str(contact.get("contact_id") or "").strip(),
+                "match_confidence": contact.get("score"),
+                "match_reason": str(contact.get("reason") or "").strip(),
+                "contact_hash": self._safe_contact_hash(display_name),
+                "direct_user_requested": True,
+                "recipient_confident": True,
+                "fresh_user_command": True,
+                "user_initiated": self._active_request_source in {"user", "text", "voice"},
+                "single_recipient": True,
+                "bulk": False,
+            }
+            return self._execute_direct_whatsapp_action("open_chat", payload)
+
+
+    def _execute_direct_whatsapp_action(self, action: str, payload: dict[str, object]) -> Dict[str, object]:
+            logger.info(
+                "[MANUAL_LIVE_VALIDATION] mode=enabled action=whatsapp status=ready reason=fresh_explicit_user_command"
+                if self._active_request_source in {"user", "text", "voice"}
+                else "[MANUAL_LIVE_VALIDATION] mode=disabled action=whatsapp status=blocked reason=non_user_source"
+            )
+            executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)
+            command = self._whatsapp_pending_command(action, payload)
+            result = executor.execute(
+                ActionPlan(
+                    original_text=command,
+                    steps=[
+                        ActionStep(
+                            step_id="step1",
+                            tool_name="whatsapp",
+                            intent="whatsapp",
+                            action=action,
+                            args=dict(payload),
+                        )
+                    ],
+                    is_multistep=False,
+                ),
+                ToolContext(
+                    command=command,
+                    intent="whatsapp",
+                    session_id=self._active_session_id,
+                    request_id=self._active_turn_id,
+                    payload={"turn_id": self._active_turn_id} if self._active_turn_id else {},
+                    source=self._active_request_source,
+                    security_state={"step_up_verified": self._active_step_up_verified},
+                ),
+            )
+            if isinstance(result, dict) and isinstance(result.get("policy"), dict):
+                result["direct_policy"] = dict(result["policy"])
+            return result
 
 
     def _resolve_whatsapp_contact(self, query: str) -> dict[str, object]:
@@ -373,27 +505,29 @@ class AutomationWhatsAppCompatibility:
             contacts = self._load_whatsapp_contacts()
             if contacts is None:
                 return {
-                    "status": "auto_call",
-                    "contact": {
-                        "display_name": contact_query,
-                        "score": None,
-                        "reason": "unindexed_name",
-                    },
+                    "status": "not_found",
+                    "message": "I need synced contacts before I can confidently use that WhatsApp contact.",
                 }
-            ranked = self.contact_match_service.rank_contacts(contact_query, contacts)
-            decision = self.contact_match_service.decide(contact_query, ranked)
-            if decision.status == "auto_call":
-                candidate = decision.candidates[0]
-                return {"status": "auto_call", "contact": self._contact_candidate_payload(candidate)}
-            if decision.status == "confirm_contact":
-                candidate = decision.candidates[0]
+            resolved = self.contact_resolution_service.resolve(contact_query, source="whatsapp", required_channel="whatsapp")
+            status = str(resolved.get("status") or "")
+            if status == "matched":
+                return {"status": "auto_call", "contact": dict(resolved.get("selected_contact") or {})}
+            if status == "weak_match":
+                candidates = list(resolved.get("candidates") or [])
+                candidate = dict(candidates[0]) if candidates else {}
                 return {
                     "status": "confirm_contact",
-                    "contact": self._contact_candidate_payload(candidate),
-                    "message": decision.message,
+                    "contact": candidate,
+                    "message": resolved.get("message") or f"I found {candidate.get('display_name')}. Did you mean {candidate.get('display_name')}?",
                 }
-            if decision.status == "clarify":
-                candidates = [self._contact_candidate_payload(candidate) for candidate in decision.candidates]
+            if status in {"ambiguous", "missing_channel"}:
+                candidates = list(resolved.get("candidates") or [])
+                if status == "missing_channel":
+                    return {
+                        "status": "missing_channel",
+                        "message": resolved.get("message") or "That contact is missing a WhatsApp phone number.",
+                        "contact": dict(resolved.get("selected_contact") or {}),
+                    }
                 return {
                     "status": "clarify",
                     "message": self._build_whatsapp_contact_clarification(contact_query, candidates),
@@ -401,7 +535,7 @@ class AutomationWhatsAppCompatibility:
                 }
             return {
                 "status": "not_found",
-                "message": decision.message or f"I couldn't find {contact_query} in your contacts.",
+                "message": resolved.get("message") or f"I couldn't find {contact_query} in your contacts.",
             }
 
 
@@ -426,6 +560,7 @@ class AutomationWhatsAppCompatibility:
                 "contact_id": candidate.contact_id,
                 "display_name": candidate.display_name,
                 "phone_number": candidate.phone_number,
+                "email_address": candidate.email_address,
                 "aliases": list(candidate.aliases),
                 "favorite": candidate.favorite,
                 "recent": candidate.recent,
@@ -433,6 +568,12 @@ class AutomationWhatsAppCompatibility:
                 "score": candidate.score,
                 "reason": candidate.reason,
             }
+
+
+    @staticmethod
+    def _safe_contact_hash(value: str) -> str:
+            normalized = " ".join(str(value or "").strip().lower().split())
+            return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16] if normalized else ""
 
 
     def _build_whatsapp_contact_clarification(self, query: str, candidates: list[dict[str, object]]) -> str:
@@ -534,6 +675,13 @@ class AutomationWhatsAppCompatibility:
                         status="whatsapp_contact_required",
                     )
 
+                original = str(payload.get("raw_contact_text") or payload.get("original_user_input") or "").strip()
+                display = str(dict(resolved).get("display_name") or "").strip()
+                if original and display and original.lower() != display.lower():
+                    try:
+                        self.contact_match_service.save_confirmed_alias(display, original)
+                    except Exception:
+                        logger.debug("Could not persist confirmed contact alias", exc_info=True)
                 self._pending_whatsapp_clarification = None
                 return self._stage_resolved_whatsapp_action(payload, resolved)
 
@@ -732,6 +880,44 @@ class AutomationWhatsAppCompatibility:
             )
 
 
+    def _open_whatsapp_chat(self, payload: dict) -> Dict[str, object]:
+            contact = str(payload.get("contact") or payload.get("receiver") or "").strip()
+            if not contact:
+                return self._status_result("open_whatsapp_chat", "Tell me which WhatsApp contact to open.", success=False, status="whatsapp_missing_contact")
+            phone_number = str(payload.get("phone_number") or "").strip()
+            if not phone_number:
+                return self._status_result(
+                    "open_whatsapp_chat",
+                    f"I found {contact}, but the contact has no phone number for WhatsApp Desktop. I did not open the chat.",
+                    success=False,
+                    status="whatsapp_missing_phone",
+                )
+            desktop = self.whatsapp_desktop.open_chat(phone_number, "")
+            if bool(desktop.get("success")):
+                return self._status_result(
+                    "open_whatsapp_chat",
+                    f"Opened WhatsApp chat with {contact}.",
+                    success=True,
+                    status="whatsapp_chat_open",
+                )
+            if str(desktop.get("status") or "") != "whatsapp_desktop_unavailable":
+                return self._status_result(
+                    "open_whatsapp_chat",
+                    str(desktop.get("message") or "Jarvis could not verify the WhatsApp chat. I did not continue."),
+                    success=False,
+                    status=str(desktop.get("status") or "whatsapp_chat_unverified"),
+                )
+            web = self._open_whatsapp_web()
+            if not bool(web.get("success")):
+                return web
+            return self._status_result(
+                "open_whatsapp_chat",
+                f"WhatsApp Web is open, but Jarvis could not verify the chat for {contact}.",
+                success=False,
+                status="whatsapp_chat_unverified",
+            )
+
+
     def _start_whatsapp_call(self, payload: dict) -> Dict[str, object]:
             contact = str(payload.get("contact") or "").strip()
             mode = "video" if str(payload.get("mode") or "").lower() == "video" else "voice"
@@ -823,4 +1009,5 @@ class AutomationWhatsAppCompatibility:
                 success=False,
                 status="whatsapp_end_call_unverified",
             )
+
 

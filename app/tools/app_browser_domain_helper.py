@@ -11,6 +11,7 @@ from typing import Callable, Dict, Iterable
 from config import BASE_DIR as CONFIG_BASE_DIR
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.tool_executor import ToolExecutor
+from app.tools.automation_domain_helper import ServiceBackedDomainHelper
 from app.services.contact_match_service import ContactCandidate, ContactMatchService
 from app.services.message_action_service import MessageActionService
 from app.tools.base import ToolContext
@@ -36,7 +37,7 @@ def _runtime_base_dir() -> Path:
 
 
 
-class AutomationAppBrowserCompatibility:
+class AutomationAppBrowserCompatibility(ServiceBackedDomainHelper):
 
     def _split_compound_commands(self, command: str) -> list[str]:
             cleaned = self._normalize_spoken_command(command)
@@ -858,4 +859,5 @@ class AutomationAppBrowserCompatibility:
 
     def _appopener_unavailable(self, action: str) -> Dict[str, str | bool]:
             return self.local_app_connector.appopener_unavailable(action)
+
 

@@ -44,6 +44,12 @@ class AutomationContextBuilder:
                 "last_browser_query": context.last_browser_query,
                 "last_file_target": context.last_file_target,
                 "last_created_file_path": context.last_created_file_path,
+                "last_file_search_results": list(context.last_file_search_results),
+                "last_folder_searched": context.last_folder_searched,
+                "last_selected_file_path": context.last_selected_file_path,
+                "last_contact_name": context.last_contact_name,
+                "last_whatsapp_chat": context.last_whatsapp_chat,
+                "last_email_recipient": context.last_email_recipient,
                 "last_tool_domain": context.last_tool_domain,
                 "last_tool_action": context.last_tool_action,
             }

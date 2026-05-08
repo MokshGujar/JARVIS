@@ -54,13 +54,13 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
 
     def test_open_whatsapp_stays_on_whatsapp_path(self):
         service = AutomationService()
-        service._open_whatsapp_desktop_or_web = Mock(return_value={"success": True, "action": "open_whatsapp", "message": "Opening WhatsApp Desktop."})
+        service.whatsapp_domain._open_whatsapp_desktop_or_web = Mock(return_value={"success": True, "action": "open_whatsapp", "message": "Opening WhatsApp Desktop."})
 
         result = service.execute("open whatsapp")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["action"], "open_whatsapp")
-        service._open_whatsapp_desktop_or_web.assert_called_once()
+        service.whatsapp_domain._open_whatsapp_desktop_or_web.assert_called_once()
 
     def test_open_chrome_is_currently_ambiguous_app_or_website(self):
         service = AutomationService()
@@ -112,3 +112,4 @@ class AppLauncherCharacterizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

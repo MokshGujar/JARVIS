@@ -65,10 +65,11 @@ class PhoneCommandService:
                 continue
             display_name = str(raw.get("display_name") or raw.get("displayName") or "").strip()
             phone_number = str(raw.get("phone_number") or raw.get("phoneNumber") or "").strip()
+            email_address = str(raw.get("email_address") or raw.get("emailAddress") or raw.get("email") or "").strip()
             contact_id = str(raw.get("contact_id") or raw.get("contactId") or "").strip()
-            if not display_name and not phone_number:
+            if not display_name and not phone_number and not email_address:
                 continue
-            key = (contact_id or phone_number or display_name).lower()
+            key = (contact_id or phone_number or email_address or display_name).lower()
             if key in seen:
                 continue
             seen.add(key)
@@ -79,6 +80,7 @@ class PhoneCommandService:
                 "contact_id": contact_id,
                 "display_name": display_name or phone_number,
                 "phone_number": phone_number,
+                "email_address": email_address,
                 "aliases": [str(alias).strip() for alias in aliases if str(alias).strip()],
                 "favorite": bool(raw.get("favorite", False)),
                 "recent": bool(raw.get("recent", False)),
@@ -116,6 +118,7 @@ class PhoneCommandService:
                 contact_id=str(raw.get("contact_id") or ""),
                 display_name=str(raw.get("display_name") or ""),
                 phone_number=str(raw.get("phone_number") or ""),
+                email_address=str(raw.get("email_address") or ""),
                 aliases=list(raw.get("aliases") or []),
                 favorite=bool(raw.get("favorite", False)),
                 recent=bool(raw.get("recent", False)),

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.connectors.browser_connector import BrowserConnector
 from app.orchestrator.intent_router import IntentRouter
@@ -36,6 +36,23 @@ class BrowserToolOrchestratorTests(unittest.TestCase):
                 self.assertIsNotNone(route)
                 self.assertEqual(route.tool_name, "browser")
                 self.assertEqual((route.intent, route.operation), expected)
+
+    def test_explicit_web_search_stays_browser_and_local_file_search_does_not(self):
+        router = IntentRouter()
+
+        for command in ("search Google for files", "search web for files", "search internet for files", "search online for files"):
+            with self.subTest(command=command):
+                route = router.route(command)
+                self.assertIsNotNone(route)
+                self.assertEqual(route.tool_name, "browser")
+                self.assertEqual(route.operation, "search")
+
+        for command in ("search a file", "search my laptop for resume", "find resume on my laptop"):
+            with self.subTest(command=command):
+                route = router.route(command)
+                self.assertIsNotNone(route)
+                self.assertEqual(route.tool_name, "file")
+                self.assertEqual(route.operation, "search_files")
 
     def test_browser_policy_low_and_high_actions(self):
         router = IntentRouter()
@@ -78,16 +95,17 @@ class BrowserToolOrchestratorTests(unittest.TestCase):
         self.assertTrue(result["success"])
         browser_service.execute.assert_called_once_with("search", query="cats", engine="google")
 
-    def test_browser_tool_delegates_to_legacy_bridge_when_available(self):
+    def test_browser_tool_delegates_to_browser_compatibility_runner_when_available(self):
         bridge = Mock()
-        bridge._execute_browser_command_legacy.return_value = {"success": True, "action": "open", "message": "Opening youtube."}
         tool = BrowserTool(automation_bridge=bridge)
 
-        result = tool.execute(ToolContext(command="open youtube", intent="browser_open_site"))
+        with patch("app.tools.compatibility_runners.BrowserCompatibilityRunner.execute", return_value={"success": True, "action": "open", "message": "Opening youtube."}) as runner:
+            result = tool.execute(ToolContext(command="open youtube", intent="browser_open_site"))
 
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_name"], "browser")
-        bridge._execute_browser_command_legacy.assert_called_once()
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "open youtube")
 
     def test_high_browser_action_blocked_without_confirmation(self):
         browser_service = Mock()

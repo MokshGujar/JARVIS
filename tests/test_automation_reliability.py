@@ -80,15 +80,15 @@ class AutomationReliabilityTests(unittest.TestCase):
 
     def test_open_chrome_followup_reuses_pending_browser_context(self):
         service = AutomationService()
-        first = service._finalize_open_result("chrome", {"success": True, "action": "open", "message": "Opening Chrome."})
-        service._open_url = Mock()
+        first = service.app_browser_domain._finalize_open_result("chrome", {"success": True, "action": "open", "message": "Opening Chrome."})
+        service.app_browser_domain._open_url = Mock()
         second = service.execute("python docs")
 
         self.assertTrue(first["success"])
         self.assertEqual(second["action"], "google_search")
         self.assertIn("python docs", second["message"])
-        service._open_url.assert_called_once()
-        self.assertEqual(service._open_url.call_args.kwargs["browser"], "chrome")
+        service.app_browser_domain._open_url.assert_called_once()
+        self.assertEqual(service.app_browser_domain._open_url.call_args.kwargs["browser"], "chrome")
         self.assertIsNone(service._pending_browser_search)
 
     def test_pending_browser_search_expires_cleanly(self):
@@ -103,7 +103,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         }
 
         with patch("app.services.automation_service.time.time", return_value=99):
-            result = service._handle_browser_search_followup("python docs")
+            result = service.app_browser_domain._handle_browser_search_followup("python docs")
 
         self.assertFalse(result["success"])
         self.assertEqual(result["action"], "search")
@@ -121,7 +121,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         }
 
         with patch("app.services.automation_service.time.time", return_value=100):
-            result = service._handle_browser_search_followup("thanks")
+            result = service.app_browser_domain._handle_browser_search_followup("thanks")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["action"], "search")
@@ -156,7 +156,7 @@ class AutomationReliabilityTests(unittest.TestCase):
 
     def test_incomplete_browser_search_followup_completes_action(self):
         service = AutomationService()
-        service._open_url = Mock()
+        service.app_browser_domain._open_url = Mock()
 
         first = service.execute("open Chrome and search for")
         second = service.execute("Python docs")
@@ -164,7 +164,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         self.assertEqual(first["message"], "What should I search for?")
         self.assertEqual(second["action"], "google_search")
         self.assertIn("Python docs", second["message"])
-        service._open_url.assert_called_once()
+        service.app_browser_domain._open_url.assert_called_once()
         self.assertIsNone(service._pending_incomplete_command)
 
     def test_stale_incomplete_pending_action_expires(self):
@@ -190,13 +190,13 @@ class AutomationReliabilityTests(unittest.TestCase):
             "created_at": 1,
             "expires_at": 1000,
         }
-        service._open_url = Mock()
+        service.app_browser_domain._open_url = Mock()
 
         with patch("app.services.automation_service.time.time", return_value=100):
             result = service.execute("thanks")
 
         self.assertEqual(result["action"], "clarification_cancelled")
-        service._open_url.assert_not_called()
+        service.app_browser_domain._open_url.assert_not_called()
 
     def test_end_call_is_low_risk_scoped_action(self):
         risk = CommandRiskService().classify("end call", command_action="automation")
@@ -205,9 +205,9 @@ class AutomationReliabilityTests(unittest.TestCase):
 
     def test_whatsapp_desktop_unverified_does_not_fake_send_success(self):
         service = AutomationService()
-        service._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
+        service.app_browser_domain._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
 
-        result = service._send_whatsapp_message({"receiver": "Alex", "message": "hello"})
+        result = service.whatsapp_domain._send_whatsapp_message({"receiver": "Alex", "message": "hello"})
 
         self.assertFalse(result["success"])
         self.assertEqual(result["actions"][0]["type"], "show_status")
@@ -222,7 +222,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         ]
         service.browser_control_service = fake_browser
 
-        result = service._open_whatsapp_web()
+        result = service.whatsapp_domain._open_whatsapp_web()
 
         self.assertFalse(result["success"])
         self.assertIn("not logged in", result["message"].lower())
@@ -241,7 +241,7 @@ class AutomationReliabilityTests(unittest.TestCase):
 
     def test_open_whatsapp_and_call_someone_opens_then_asks_for_contact_without_step_up(self):
         service = AutomationService()
-        service._open_whatsapp_desktop_or_web = Mock(return_value={
+        service.whatsapp_domain._open_whatsapp_desktop_or_web = Mock(return_value={
             "success": True,
             "action": "open_whatsapp",
             "message": "Opening WhatsApp Desktop.",
@@ -250,7 +250,7 @@ class AutomationReliabilityTests(unittest.TestCase):
 
         result = service.execute("open WhatsApp and call someone")
 
-        service._open_whatsapp_desktop_or_web.assert_called_once()
+        service.whatsapp_domain._open_whatsapp_desktop_or_web.assert_called_once()
         self.assertFalse(result["success"])
         self.assertEqual(result["message"], "Who should I call on WhatsApp?")
         self.assertEqual(result["spoken_text"], "Who should I call on WhatsApp?")
@@ -259,9 +259,9 @@ class AutomationReliabilityTests(unittest.TestCase):
         self.assertTrue(any(action.get("status") == "whatsapp_contact_required" for action in result["actions"]))
         self.assertFalse(result["requires_step_up"])
 
-    def test_open_whatsapp_and_call_named_contact_stages_confirmation_without_step_up(self):
+    def test_open_whatsapp_and_call_named_contact_without_synced_contact_fails_closed(self):
         service = AutomationService()
-        service._open_whatsapp_desktop_or_web = Mock(return_value={
+        service.whatsapp_domain._open_whatsapp_desktop_or_web = Mock(return_value={
             "success": True,
             "action": "open_whatsapp",
             "message": "Opening WhatsApp Desktop.",
@@ -270,11 +270,8 @@ class AutomationReliabilityTests(unittest.TestCase):
 
         result = service.execute("open WhatsApp and call Hitanshi India")
 
-        self.assertEqual(result["action"], "multi_action")
-        self.assertIn("Ready to call Hitanshi India on WhatsApp", result["message"])
-        self.assertEqual(service._pending_mark_action["kind"], "whatsapp_call")
-        self.assertEqual(service._pending_mark_action["payload"]["contact"], "Hitanshi India")
-        self.assertTrue(any(action.get("status") == "whatsapp_call_pending" for action in result["actions"]))
+        self.assertEqual(result["action"], "whatsapp_contact_not_found")
+        self.assertIsNone(service._pending_mark_action)
         self.assertFalse(result["requires_step_up"])
 
     def test_call_someone_asks_for_contact_and_never_uses_appopener(self):
@@ -290,79 +287,75 @@ class AutomationReliabilityTests(unittest.TestCase):
         self.assertEqual(service._pending_whatsapp_clarification["kind"], "whatsapp_call")
         self.assertIsNone(service._pending_mark_action)
 
-    def test_whatsapp_contact_followup_turns_clarification_into_call_confirmation(self):
+    def test_whatsapp_contact_followup_without_synced_contact_fails_closed(self):
         service = AutomationService()
         first = service.execute("call someone")
         second = service.execute("Rahul")
 
         self.assertEqual(first["message"], "Who should I call on WhatsApp?")
         self.assertFalse(second["success"])
-        self.assertEqual(second["action"], "whatsapp_call_pending")
-        self.assertIn("Rahul", second["message"])
-        self.assertEqual(service._pending_mark_action["kind"], "whatsapp_call")
-        self.assertEqual(service._pending_mark_action["payload"]["contact"], "Rahul")
+        self.assertEqual(second["action"], "whatsapp_contact_not_found")
         self.assertIsNone(service._pending_whatsapp_clarification)
         self.assertFalse(second["requires_step_up"])
 
-    def test_whatsapp_call_with_contact_stages_confirmation_without_step_up(self):
+    def test_whatsapp_call_with_unsynced_contact_fails_closed(self):
         service = AutomationService()
 
         result = service.execute("call Rahul on WhatsApp")
         auth_text = service.pending_authorization_text("yes")
-        risk = CommandRiskService().classify(auth_text, command_action="automation")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "whatsapp_call_pending")
-        self.assertEqual(service._pending_mark_action["payload"]["contact"], "Rahul")
+        self.assertEqual(result["action"], "whatsapp_contact_not_found")
+        self.assertIsNone(service._pending_mark_action)
         self.assertFalse(result["requires_step_up"])
-        self.assertIn("call Rahul on whatsapp", auth_text)
-        self.assertFalse(risk.step_up_required)
+        self.assertIsNone(auth_text)
 
-    def test_tell_jarvis_to_call_suhani_routes_as_whatsapp_confirmation(self):
+    def test_tell_jarvis_to_call_suhani_missing_phone_fails_closed(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Suhani", contact_id="s1")])
 
         result = service.execute("tell jarvis to call Suhani")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["action"], "whatsapp_call_pending")
-        self.assertEqual(result["message"], "Ready to call Suhani on WhatsApp. Say yes to continue or no to cancel.")
-        self.assertEqual(service._pending_mark_action["payload"]["contact"], "Suhani")
-        self.assertEqual(service._pending_mark_action["payload"]["contact_id"], "s1")
+        self.assertEqual(result["action"], "whatsapp_missing_phone")
+        self.assertIsNone(service._pending_mark_action)
         self.assertFalse(result["requires_step_up"])
 
     def test_generic_whatsapp_contact_parsing_is_not_name_specific(self):
         contacts = [
-            ContactCandidate(display_name="Rahul", contact_id="c1"),
-            ContactCandidate(display_name="Mom", contact_id="c2", aliases=["mother"]),
-            ContactCandidate(display_name="Neha", contact_id="c3"),
-            ContactCandidate(display_name="Priya", contact_id="c4"),
-            ContactCandidate(display_name="Aman", contact_id="c5"),
+            ContactCandidate(display_name="Rahul", contact_id="c1", phone_number="+910000000001"),
+            ContactCandidate(display_name="Mom", contact_id="c2", aliases=["mother"], phone_number="+910000000002"),
+            ContactCandidate(display_name="Neha", contact_id="c3", phone_number="+910000000003"),
+            ContactCandidate(display_name="Priya", contact_id="c4", phone_number="+910000000004"),
+            ContactCandidate(display_name="Aman", contact_id="c5", phone_number="+910000000005"),
         ]
         cases = [
-            ("tell jarvis to call Rahul", "whatsapp_call_pending", "Rahul", "voice"),
-            ("tell jarvis to call Mom", "whatsapp_call_pending", "Mom", "voice"),
-            ("call Neha on WhatsApp", "whatsapp_call_pending", "Neha", "voice"),
-            ("video call Priya", "whatsapp_call_pending", "Priya", "video"),
+            ("tell jarvis to call Rahul", "Rahul", "voice", "+910000000001"),
+            ("tell jarvis to call Mom", "Mom", "voice", "+910000000002"),
+            ("call Neha on WhatsApp", "Neha", "voice", "+910000000003"),
+            ("video call Priya", "Priya", "video", "+910000000004"),
         ]
 
-        for command, action, contact, mode in cases:
+        for command, contact, mode, phone in cases:
             with self.subTest(command=command):
                 service = AutomationService()
+                service.whatsapp_desktop = Mock()
+                service.whatsapp_desktop.start_call.return_value = {"success": True, "status": "whatsapp_calling", "message": "started"}
                 service.set_whatsapp_contacts_provider(lambda contacts=contacts: contacts)
                 result = service.execute(command)
-                self.assertEqual(result["action"], action)
-                self.assertEqual(service._pending_mark_action["payload"]["contact"], contact)
-                self.assertEqual(service._pending_mark_action["payload"]["mode"], mode)
+                self.assertTrue(result["success"])
+                self.assertEqual(result["action"], "whatsapp_call")
+                service.whatsapp_desktop.start_call.assert_called_once_with(phone, mode)
                 self.assertIn(contact, result["message"])
 
         service = AutomationService()
+        service.whatsapp_desktop = Mock()
+        service.whatsapp_desktop.send_message.return_value = {"success": True, "status": "whatsapp_message_sent", "message": "sent"}
         service.set_whatsapp_contacts_provider(lambda: contacts)
         result = service.execute("message Aman hello")
-        self.assertEqual(result["action"], "send_message_pending")
-        self.assertEqual(service._pending_mark_action["kind"], "send_message")
-        self.assertEqual(service._pending_mark_action["payload"]["receiver"], "Aman")
-        self.assertEqual(service._pending_mark_action["payload"]["message"], "hello")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "send_whatsapp_message")
+        service.whatsapp_desktop.send_message.assert_called_once_with("+910000000005", "hello")
 
     def test_whatsapp_call_multiple_contact_matches_asks_which_contact(self):
         service = AutomationService()
@@ -436,20 +429,19 @@ class AutomationReliabilityTests(unittest.TestCase):
         self.assertIn("voice call Hetanshi India on whatsapp", auth_text)
         self.assertFalse(risk.step_up_required)
 
-    def test_confirmation_prompt_spoken_once_per_pending_action_id(self):
+    def test_missing_phone_has_no_confirmation_prompt(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Suhani", contact_id="s1")])
 
         first = service.execute("call Suhani on WhatsApp")
         duplicate = service.execute("maybe")
 
-        self.assertEqual(first["action"], "whatsapp_call_pending")
-        self.assertIn("Say yes to continue or no to cancel", first["spoken_text"])
-        self.assertEqual(first["pending_action_id"], duplicate["pending_action_id"])
-        self.assertNotIn("Say yes to continue or no to cancel", duplicate["message"])
-        self.assertEqual(duplicate["spoken_text"], "")
+        self.assertEqual(first["action"], "whatsapp_missing_phone")
+        self.assertNotIn("Say yes to continue or no to cancel", first["spoken_text"])
+        self.assertEqual(duplicate["action"], "unsupported")
+        self.assertEqual(duplicate["spoken_text"], "I couldn't complete that action.")
 
-    def test_new_pending_action_gets_prompt_after_cancel_clears_prompt_state(self):
+    def test_no_pending_action_after_missing_phone(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Suhani", contact_id="s1")])
 
@@ -457,11 +449,12 @@ class AutomationReliabilityTests(unittest.TestCase):
         cancelled = service.execute("no")
         second = service.execute("call Suhani on WhatsApp")
 
-        self.assertEqual(cancelled["action"], "confirmation_cancelled")
-        self.assertEqual(first["pending_action_id"], second["pending_action_id"])
-        self.assertIn("Say yes to continue or no to cancel", second["spoken_text"])
+        self.assertEqual(first["action"], "whatsapp_missing_phone")
+        self.assertEqual(cancelled["action"], "unsupported")
+        self.assertEqual(second["action"], "whatsapp_missing_phone")
+        self.assertIsNone(service._pending_mark_action)
 
-    def test_duplicate_confirmation_stream_result_has_no_spoken_text(self):
+    def test_missing_phone_stream_result_reports_blocker(self):
         from app.capabilities.automation import AutomationCapability
         from app.core.contracts import AssistantContext
 
@@ -473,8 +466,8 @@ class AutomationReliabilityTests(unittest.TestCase):
         duplicate_context = AssistantContext(session_id="session-1", message="maybe")
         duplicate = capability.execute(duplicate_context)
 
-        self.assertIn("Say yes to continue or no to cancel", first.text)
-        self.assertEqual(duplicate.text, "")
+        self.assertIn("no phone number", first.text)
+        self.assertEqual(duplicate.text, "I couldn't complete that action.")
 
     def test_whatsapp_message_typo_repairs_multi_word_contact_and_waits(self):
         service = AutomationService()
@@ -504,23 +497,22 @@ class AutomationReliabilityTests(unittest.TestCase):
         self.assertEqual(service._pending_mark_action["payload"]["message"], "hello")
         self.assertEqual(service._pending_mark_action["payload"]["phone_number"], "+919999999999")
 
-    def test_whatsapp_call_confirmation_cancel_clears_pending_call(self):
+    def test_whatsapp_call_missing_phone_cancel_has_no_pending_call(self):
         service = AutomationService()
         service.set_whatsapp_contacts_provider(lambda: [ContactCandidate(display_name="Suhani", contact_id="s1")])
         service.execute("call Suhani on WhatsApp")
 
         result = service.execute("no")
 
-        self.assertTrue(result["success"])
-        self.assertEqual(result["action"], "confirmation_cancelled")
+        self.assertFalse(result["success"])
         self.assertIsNone(service._pending_mark_action)
 
     def test_whatsapp_call_ui_selector_failure_fails_closed(self):
         service = AutomationService()
-        service._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
-        service._click_verified_whatsapp_call_button = Mock(return_value=False)
+        service.app_browser_domain._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
+        service.whatsapp_domain._click_verified_whatsapp_call_button = Mock(return_value=False)
 
-        result = service._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
 
         self.assertFalse(result["success"])
         self.assertEqual(result["actions"][0]["status"], "whatsapp_desktop_unverified")
@@ -528,10 +520,10 @@ class AutomationReliabilityTests(unittest.TestCase):
 
     def test_whatsapp_call_verified_start_returns_calling_hud_status(self):
         service = AutomationService()
-        service._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
-        service._click_verified_whatsapp_call_button = Mock(return_value=True)
+        service.app_browser_domain._open_app_target = Mock(return_value={"success": True, "action": "open", "message": "Opening WhatsApp."})
+        service.whatsapp_domain._click_verified_whatsapp_call_button = Mock(return_value=True)
 
-        result = service._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Suhani", "mode": "voice"})
 
         self.assertTrue(result["success"])
         self.assertEqual(result["message"], "Calling Suhani...")
@@ -542,7 +534,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         service.whatsapp_desktop = Mock()
         service.whatsapp_desktop.start_call.return_value = {"success": True, "status": "whatsapp_calling", "message": "WhatsApp call started."}
 
-        result = service._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
 
         self.assertTrue(result["success"])
         service.whatsapp_desktop.start_call.assert_called_once_with("+919999999999", "voice")
@@ -557,7 +549,7 @@ class AutomationReliabilityTests(unittest.TestCase):
             "message": "Jarvis clicked the call control, but could not verify that the call UI appeared.",
         }
 
-        result = service._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
+        result = service.whatsapp_domain._start_whatsapp_call({"contact": "Hetanshi India", "phone_number": "+919999999999", "mode": "voice"})
 
         self.assertFalse(result["success"])
         self.assertEqual(result["actions"][0]["status"], "whatsapp_call_unverified")
@@ -568,7 +560,7 @@ class AutomationReliabilityTests(unittest.TestCase):
         service.whatsapp_desktop = Mock()
         service.whatsapp_desktop.send_message.return_value = {"success": True, "status": "whatsapp_message_sent", "message": "WhatsApp message sent."}
 
-        result = service._send_whatsapp_message({"receiver": "Hetanshi India", "phone_number": "+919999999999", "message": "hello"})
+        result = service.whatsapp_domain._send_whatsapp_message({"receiver": "Hetanshi India", "phone_number": "+919999999999", "message": "hello"})
 
         self.assertTrue(result["success"])
         service.whatsapp_desktop.send_message.assert_called_once_with("+919999999999", "hello")
@@ -583,7 +575,7 @@ class AutomationReliabilityTests(unittest.TestCase):
             "message": "Jarvis could not verify the WhatsApp send control. I did not send the message.",
         }
 
-        result = service._send_whatsapp_message({"receiver": "Hetanshi India", "phone_number": "+919999999999", "message": "hello"})
+        result = service.whatsapp_domain._send_whatsapp_message({"receiver": "Hetanshi India", "phone_number": "+919999999999", "message": "hello"})
 
         self.assertFalse(result["success"])
         self.assertEqual(result["actions"][0]["status"], "whatsapp_send_unverified")
@@ -631,3 +623,4 @@ class AutomationReliabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

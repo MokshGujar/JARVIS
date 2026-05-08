@@ -142,6 +142,63 @@ def test_monolithic_automation_compatibility_mixin_has_been_removed():
     assert "automation_compatibility_mixins" not in source
 
 
+def test_service_side_domain_compatibility_files_have_been_promoted():
+    forbidden = {
+        "automation_file_compatibility.py",
+        "automation_app_browser_compatibility.py",
+        "automation_system_compatibility.py",
+        "automation_whatsapp_compatibility.py",
+        "automation_domain_helper.py",
+    }
+    existing = {path.name for path in (ROOT / "app" / "services").glob("automation_*compatibility.py")}
+    if (ROOT / "app" / "services" / "automation_domain_helper.py").exists():
+        existing.add("automation_domain_helper.py")
+
+    assert existing.isdisjoint(forbidden)
+
+
+def test_automation_service_does_not_inherit_domain_compatibility_helpers():
+    source = (ROOT / "app" / "services" / "automation_service.py").read_text(encoding="utf-8")
+    module = ast.parse(source)
+    service_class = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AutomationService")
+    base_names = {
+        getattr(base, "id", getattr(base, "attr", ""))
+        for base in service_class.bases
+    }
+
+    assert base_names.isdisjoint(
+        {
+            "AutomationFileCompatibility",
+            "AutomationAppBrowserCompatibility",
+            "AutomationSystemCompatibility",
+            "AutomationWhatsAppCompatibility",
+        }
+    )
+
+
+def test_tests_do_not_patch_automation_service_private_domain_helpers():
+    forbidden = {
+        'patch.object(service, "_delete_file"',
+        'patch.object(service, "_send_whatsapp_message"',
+        'patch.object(service, "_open_url"',
+        'patch.object(service, "_open_whatsapp',
+        "service._start_whatsapp_call",
+        "service._send_whatsapp_message",
+        "service._handle_browser_search_followup",
+        "service._finalize_open_result",
+    }
+    offenders: list[str] = []
+    for path in _python_files(ROOT / "tests"):
+        if path.name == "test_architecture_execution_boundaries.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            if token in text:
+                offenders.append(f"{path.relative_to(ROOT)} references {token}")
+
+    assert offenders == []
+
+
 def test_config_app_is_not_imported_by_runtime_source():
     offenders: list[str] = []
     for base in (ROOT / "app", ROOT / "tests"):

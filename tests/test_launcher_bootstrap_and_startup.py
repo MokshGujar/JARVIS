@@ -208,6 +208,20 @@ class FrontendSourceTests(unittest.TestCase):
         self.assertIn("window.history.replaceState", script)
         self.assertNotIn("face_session_id=", script)
 
+    def test_app_frontend_greets_once_after_launcher_face_gate(self):
+        with open("frontend/script.js", encoding="utf-8") as handle:
+            script = handle.read()
+
+        self.assertIn("const FACE_GATE_GREETING_SESSION_KEY = 'jarvis_face_gate_greeting_session_id';", script)
+        self.assertIn("async function playFaceGateGreetingOnce(faceSessionId)", script)
+        self.assertIn("Welcome back, Moksh. JARVIS is online.", script)
+        self.assertIn("sessionStorage.getItem(FACE_GATE_GREETING_SESSION_KEY)", script)
+        self.assertIn("sessionStorage.setItem(FACE_GATE_GREETING_SESSION_KEY, session)", script)
+        self.assertIn("playFaceGateGreetingOnce(entryGateSessionId)", script)
+        self.assertIn("[FACE_GATE] status=verified source=launcher", script)
+        self.assertIn("[GREETING] status=started reason=face_gate_verified", script)
+        self.assertLess(script.index("if (res.ok && payload.exchanged && payload.face_session_id)"), script.index("playFaceGateGreetingOnce(entryGateSessionId)"))
+
     def test_launcher_html_uses_isolated_assets_and_reuses_app_style(self):
         with open("frontend/launcher.html", encoding="utf-8") as handle:
             html = handle.read()

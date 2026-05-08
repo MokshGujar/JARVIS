@@ -529,7 +529,7 @@ class AgentService:
             if not self.automation_service:
                 raise RuntimeError("Automation service is not initialized.")
             command = str(step.input.get("command", "")).strip()
-            result = self.automation_service.execute(command)
+            result = self.automation_service.execute(command, source="agent")
             response = str(result["message"])
             step.output_summary = self._shorten(response)
             yield {"_activity": {"event": "tool_result", "tool_name": tool_name, "message": response}}

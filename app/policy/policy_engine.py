@@ -45,7 +45,9 @@ class PolicyEngine:
         "send_message",
         "confirm_send",
         "send_email",
+        "reply_email",
         "send_sms",
+        "open_chat",
         "start_voice_call",
         "start_video_call",
         "call_contact",
@@ -139,8 +141,23 @@ class PolicyEngine:
                 )
             return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.CRITICAL, "unknown_system_action_denied", normalized_tool, normalized_action, session_id, turn_id)
 
-        if normalized_tool in {"communication", "message", "whatsapp", "phone", "email"} or normalized_action in self.COMMUNICATION_SEND_ACTIONS:
+        if normalized_tool in {"communication", "message", "whatsapp", "phone", "email", "gmail"} or normalized_action in self.COMMUNICATION_SEND_ACTIONS:
             risk = ToolRiskLevel.HIGH if normalized_action in self.COMMUNICATION_SEND_ACTIONS else ToolRiskLevel.LOW
+            if risk == ToolRiskLevel.HIGH and self._direct_user_requested_communication_allowed(normalized_action, args, context):
+                reason = (
+                    "explicit_user_command_confident_recipient"
+                    if normalized_tool in {"gmail", "email"} or normalized_action in {"send_email", "reply_email"}
+                    else "explicit_user_command_confident_contact"
+                )
+                return self._decision(
+                    PolicyDecisionType.ALLOW,
+                    risk,
+                    reason,
+                    normalized_tool,
+                    normalized_action,
+                    session_id,
+                    turn_id,
+                )
             decision = PolicyDecisionType.CONFIRM if risk == ToolRiskLevel.HIGH else PolicyDecisionType.ALLOW
             return self._decision(
                 decision,
@@ -161,6 +178,26 @@ class PolicyEngine:
             return self._decision(PolicyDecisionType.ALLOW, metadata.risk_level, "tool_metadata_allows", normalized_tool, normalized_action, session_id, turn_id)
 
         return self._decision(PolicyDecisionType.DENY, ToolRiskLevel.HIGH, "unknown_tool_or_metadata_missing", normalized_tool, normalized_action, session_id, turn_id)
+
+    def _direct_user_requested_communication_allowed(self, action: str, args: dict[str, Any], context: Any | None) -> bool:
+        if not bool(args.get("direct_user_requested")):
+            return False
+        if not bool(args.get("user_initiated")):
+            return False
+        if not bool(args.get("fresh_user_command")):
+            return False
+        if bool(args.get("bulk")):
+            return False
+        if not bool(args.get("single_recipient")):
+            return False
+        if not bool(args.get("recipient_confident")):
+            return False
+        if action in {"send", "send_message", "send_email", "reply_email", "send_sms"} and not bool(args.get("has_body")):
+            return False
+        source = str(getattr(context, "source", "") or "").strip().lower()
+        if source in {"agent", "background", "scheduled", "reminder", "recovered"}:
+            return False
+        return True
 
     def _evaluate_file(
         self,

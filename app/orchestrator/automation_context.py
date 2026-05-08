@@ -158,6 +158,9 @@ class AutomationContext:
     last_created_file_path: str | None = None
     last_edited_file_path: str | None = None
     last_read_file_path: str | None = None
+    last_file_search_results: list[dict[str, Any]] = field(default_factory=list)
+    last_folder_searched: str | None = None
+    last_selected_file_path: str | None = None
     last_browser: str | None = None
     last_browser_query: str | None = None
     last_opened_url: str | None = None
@@ -167,6 +170,10 @@ class AutomationContext:
     current_document_context: dict[str, Any] | None = None
     current_browser_context: dict[str, Any] | None = None
     current_message_draft: dict[str, Any] | None = None
+    last_contact_name: str | None = None
+    last_whatsapp_chat: str | None = None
+    last_email_recipient: str | None = None
+    last_email_thread: str | None = None
     current_pending_action: dict[str, Any] | None = None
     pending_action_type: str | None = None
     last_confirmation_request: PendingConfirmation | None = None
@@ -223,6 +230,8 @@ class AutomationContext:
         query = result.get("query") or data.get("query") if isinstance(result, dict) else None
         url = result.get("url") or data.get("url") if isinstance(result, dict) else None
         title = result.get("title") or data.get("title") if isinstance(result, dict) else None
+        search_results = data.get("results") if isinstance(data.get("results"), list) else result.get("results") if isinstance(result, dict) and isinstance(result.get("results"), list) else None
+        folder = data.get("folder") if isinstance(data, dict) else None
         resolved_args = dict(result.get("resolved_args") or {}) if isinstance(result, dict) and isinstance(result.get("resolved_args"), dict) else {}
         if content is None:
             content = resolved_args.get("content") or resolved_args.get("text")
@@ -247,6 +256,16 @@ class AutomationContext:
                 self.last_edited_file_path = str(path)
             if action == "read_file":
                 self.last_read_file_path = str(path)
+            if action in {"select_file", "open_file"}:
+                self.last_selected_file_path = str(path)
+        if search_results is not None and action in {"find_files", "search_files"}:
+            self.last_file_search_results = [dict(item) for item in search_results if isinstance(item, dict)]
+            if folder:
+                self.last_folder_searched = str(folder)
+            if len(self.last_file_search_results) == 1:
+                selected = str(self.last_file_search_results[0].get("path") or "")
+                self.last_selected_file_path = selected or self.last_selected_file_path
+                self.last_file_target = selected or self.last_file_target
         if content is not None:
             self.last_content = self.redact_sensitive_text(str(content))
             if action in {"type_text", "type_into_active_field", "append_text", "paste_text"}:
@@ -273,7 +292,8 @@ class AutomationContext:
         ref = re.sub(r"\s+", " ", str(reference or "").strip().lower())
         if ref in {"it", "this", "that", "last one"}:
             return (
-                self.last_created_file_path
+                self.last_selected_file_path
+                or self.last_created_file_path
                 or self.last_edited_file_path
                 or self.last_file_path
                 or self.current_message_draft
@@ -281,7 +301,7 @@ class AutomationContext:
                 or self.last_semantic_target
             )
         if ref in {"that file", "same file", "the file"}:
-            return self.last_edited_file_path or self.last_created_file_path or self.last_file_path
+            return self.last_selected_file_path or self.last_edited_file_path or self.last_created_file_path or self.last_file_path
         if ref in {"that search", "the search", "same search"}:
             return self.last_browser_query
         if ref in {"same app", "that app", "the app"}:

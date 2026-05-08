@@ -99,10 +99,10 @@ Date: 2026-05-07
 
 ### Domain Helper Modules
 
-- `app/services/automation_file_compatibility.py`: 1,085 LOC, 41 methods.
-- `app/services/automation_app_browser_compatibility.py`: 861 LOC, 35 methods.
-- `app/services/automation_system_compatibility.py`: 250 LOC, 12 methods.
-- `app/services/automation_whatsapp_compatibility.py`: 826 LOC, 31 methods.
+- `app/tools/file_domain_helper.py`: 1,085 LOC, 41 methods.
+- `app/tools/app_browser_domain_helper.py`: 861 LOC, 35 methods.
+- `app/tools/system_domain_helper.py`: 250 LOC, 12 methods.
+- `app/tools/whatsapp_domain_helper.py`: 826 LOC, 31 methods.
 
 ### Status
 
@@ -112,3 +112,45 @@ Date: 2026-05-07
 - Verification after split:
   - Focused command: `133 passed, 1 warning, 60 subtests passed in 2.26s`.
   - Full `tests/` command with cache disabled: `667 passed, 413 subtests passed in 59.77s`.
+
+## 2026-05-07 Domain Helper Inheritance Removal
+
+- `AutomationService` no longer inherits `AutomationFileCompatibility`, `AutomationAppBrowserCompatibility`, `AutomationSystemCompatibility`, or `AutomationWhatsAppCompatibility`.
+- `AutomationService` now composes explicit helpers: `file_domain`, `app_browser_domain`, `system_domain`, and `whatsapp_domain`.
+- Tool registry wiring now passes domain helpers to `FileTool`, `AppTool`, `AppLauncherTool`, `BrowserTool`, `SystemTool`, and `WhatsAppTool`.
+- Direct tool constructors normalize an `AutomationService` argument to the correct domain helper, preserving compatibility for existing tests/runtime code.
+- New helper: `app/tools/automation_domain_helper.py`, which keeps mutable runtime state on `AutomationService` while allowing helper methods to be composed instead of inherited.
+- AutomationService final for this phase: 1,532 LOC, 56 directly defined methods, zero base classes.
+- Remaining blocker for under-900 LOC at that checkpoint: `_execute_facade` still contained legacy compatibility routing and the domain helpers were still transitional composition dependencies.
+- Verification:
+  - Focused command: `135 passed, 1 warning, 60 subtests passed in 2.23s`.
+  - Full `tests/` command with cache disabled: `669 passed, 415 subtests passed in 40.75s`.
+
+## 2026-05-07 Domain Helper Promotion And Router Extraction
+
+- `AutomationService` before this phase: 1,533 LOC, 56 directly defined methods, zero base classes.
+- `AutomationService` after this phase: 704 LOC, 55 directly defined methods, zero base classes.
+- New module: `app/tools/automation_facade_router.py`, which owns the remaining compatibility facade routing glue and preserves the policy-gated orchestrator/tool path.
+- Service-side domain helper files are removed from `app/services/`; the active transitional helpers are tool-owned:
+  - `app/tools/file_domain_helper.py`: 1,087 LOC, 41 methods.
+  - `app/tools/app_browser_domain_helper.py`: 863 LOC, 35 methods.
+  - `app/tools/system_domain_helper.py`: 252 LOC, 12 methods.
+  - `app/tools/whatsapp_domain_helper.py`: 828 LOC, 31 methods.
+  - `app/tools/automation_domain_helper.py`: shared service-backed state proxy.
+- Tests updated:
+  - `tests/test_tool_delegation_integration.py` now patches `app.tools.automation_facade_router.FileTool` and `AppTool`, matching the extracted tool registry construction boundary.
+  - `tests/test_architecture_execution_boundaries.py` now guards that service-side domain compatibility files do not return.
+- Public API preserved:
+  - `AutomationService.execute()` still calls `_execute_facade()`.
+  - Compatibility wrappers remain for `_execute_file_tool`, `_execute_app_tool`, `_execute_browser_tool`, and `_execute_system_tool` because focused tests still exercise them directly.
+- Remaining blockers:
+  - `AutomationService` still composes `file_domain`, `app_browser_domain`, `system_domain`, and `whatsapp_domain`.
+  - Tool registry still receives transitional domain helper objects.
+  - The tool-owned domain helpers still need to be split into smaller parser/connector/adapter/tool-native code in a later batch.
+- Focused promotion suite:
+  - `python -m pytest -q tests/test_core_automation_facade.py tests/test_tool_orchestrator_architecture.py tests/test_architecture_execution_boundaries.py tests/test_automation_reliability.py tests/test_app_launcher_tool_orchestrator.py tests/test_browser_tool_orchestrator.py tests/test_system_tool_orchestrator.py tests/test_whatsapp_characterization.py tests/test_file_characterization.py tests/test_semantic_claim_reliability.py`
+  - Result: `136 passed, 1 warning, 60 subtests passed in 2.21s`.
+- Full promotion suite:
+  - `python -m pytest -q tests -p no:cacheprovider`
+  - Result: `670 passed, 405 subtests passed in 62.46s`.
+

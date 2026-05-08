@@ -8,7 +8,7 @@ class CanonicalChainObservabilityTests(unittest.TestCase):
     def test_open_app_emits_canonical_boundary_logs(self):
         service = AutomationService()
         with (
-            patch.object(service, "_execute_app_launcher_command_legacy", return_value={"success": True, "action": "open", "message": "Opening calculator."}),
+            patch("app.tools.compatibility_runners.AppCompatibilityRunner.execute", return_value={"success": True, "action": "open", "message": "Opening calculator."}),
             self.assertLogs(level="INFO") as captured,
         ):
             result = service.execute("open calculator", session_id="obs", turn_id="obs-open")
@@ -24,7 +24,7 @@ class CanonicalChainObservabilityTests(unittest.TestCase):
 
     def test_browser_search_emits_canonical_boundary_logs(self):
         service = AutomationService()
-        service._open_url = Mock()
+        service.app_browser_domain._open_url = Mock()
         with self.assertLogs(level="INFO") as captured:
             result = service.execute("search google for cats", session_id="obs", turn_id="obs-search")
 
@@ -40,7 +40,7 @@ class CanonicalChainObservabilityTests(unittest.TestCase):
     def test_delete_file_policy_log_blocks_execution(self):
         service = AutomationService()
         with (
-            patch.object(service, "_delete_file", side_effect=AssertionError("delete bypass")),
+            patch.object(service.file_domain, "_delete_file", side_effect=AssertionError("delete bypass")),
             self.assertLogs(level="INFO") as captured,
         ):
             result = service.execute("delete file notes.txt", session_id="obs", turn_id="obs-delete")
@@ -55,3 +55,4 @@ class CanonicalChainObservabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

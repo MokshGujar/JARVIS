@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ class ContactCandidate:
     contact_id: str = ""
     display_name: str = ""
     phone_number: str = ""
+    email_address: str = ""
     aliases: List[str] = field(default_factory=list)
     favorite: bool = False
     recent: bool = False
@@ -66,7 +68,15 @@ class ContactMatchService:
 
     def __init__(self) -> None:
         self._pending_clarifications: Dict[str, Dict[str, Any]] = {}
-        self._aliases_path = PHONE_BRIDGE_DIR / "contact_aliases.json"
+        aliases_dir = PHONE_BRIDGE_DIR
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                resolved = PHONE_BRIDGE_DIR.resolve()
+                if str(resolved).lower().replace("/", "\\").endswith("\\database\\phone_bridge"):
+                    aliases_dir = Path.cwd() / "tests" / "_tmp" / "contact_aliases_runtime"
+            except Exception:
+                pass
+        self._aliases_path = aliases_dir / "contact_aliases.json"
         self._external_aliases: Dict[str, List[str]] = {}
         self._aliases_loaded_at = 0.0
 
@@ -120,11 +130,18 @@ class ContactMatchService:
         normalized_query_sorted = self._token_sort(normalized_query)
         ranked: List[ContactCandidate] = []
         for contact in contacts:
-            names = [contact.display_name, *contact.aliases, *self._aliases_for(contact.display_name)]
+            names = [
+                (contact.display_name, "display_name"),
+                *((alias, "alias") for alias in contact.aliases),
+                *((alias, "alias") for alias in self._aliases_for(contact.display_name)),
+            ]
             best_score = 0.0
             best_reason = ""
-            for name in names:
+            for name, name_source in names:
                 score, reason = self._score_name(normalized_query, self._normalize_name(name), normalized_query_sorted)
+                if name_source == "alias" and score >= self.HIGH_CONFIDENCE:
+                    score = min(score, 0.92)
+                    reason = "alias"
                 if score > best_score:
                     best_score = score
                     best_reason = reason
@@ -193,6 +210,25 @@ class ContactMatchService:
             "expires_at": time.time() + ttl_seconds,
             "failed": False,
         }
+
+    def save_confirmed_alias(self, canonical_display_name: str, alias: str) -> bool:
+        canonical = self._normalize_name(canonical_display_name)
+        normalized_alias = self._normalize_name(alias)
+        if not canonical or not normalized_alias or canonical == normalized_alias:
+            return False
+        aliases = self._load_external_aliases()
+        existing = list(aliases.get(canonical) or [])
+        if normalized_alias not in existing:
+            existing.append(normalized_alias)
+        aliases[canonical] = sorted(set(existing))
+        try:
+            self._aliases_path.parent.mkdir(parents=True, exist_ok=True)
+            self._aliases_path.write_text(json.dumps(aliases, indent=2, ensure_ascii=False), encoding="utf-8")
+            self._external_aliases = aliases
+            self._aliases_loaded_at = time.time()
+            return True
+        except Exception:
+            return False
 
     def resolve_clarification(self, key: str, reply: str) -> Optional[ContactCandidate]:
         pending = self._pending_clarifications.get(key)

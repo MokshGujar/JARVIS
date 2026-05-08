@@ -91,24 +91,24 @@ class SemanticClaimReliabilityTests(unittest.TestCase):
 
     def test_semantic_open_calculator_does_not_send_jarvis_to_legacy_app_opener(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {
-            "success": True,
-            "action": "open",
-            "message": "Opening Calculator.",
-        }
-        result = MainOrchestrator(
-            registry=ToolRegistry([AppTool(bridge)]),
-            semantic_adapter=SemanticPlannerAdapter(
-                smart_automation_enabled=True,
-                semantic_planner_enabled=True,
-                safe_execution_enabled=True,
-            ),
-            enforce_policy=True,
-        ).execute(ToolContext(command="open calculator Jarvis", payload={"automation_context": AutomationContext(session_id="s1")}))
+        with patch(
+            "app.tools.compatibility_runners.AppCompatibilityRunner.execute",
+            return_value={"success": True, "action": "open", "message": "Opening Calculator."},
+        ) as runner:
+            result = MainOrchestrator(
+                registry=ToolRegistry([AppTool(bridge)]),
+                semantic_adapter=SemanticPlannerAdapter(
+                    smart_automation_enabled=True,
+                    semantic_planner_enabled=True,
+                    safe_execution_enabled=True,
+                ),
+                enforce_policy=True,
+            ).execute(ToolContext(command="open calculator Jarvis", payload={"automation_context": AutomationContext(session_id="s1")}))
 
         self.assertTrue(result["success"])
-        bridge._execute_app_launcher_command_legacy.assert_called_once_with("open calculator")
-        self.assertNotIn("calculator jarvis", bridge._execute_app_launcher_command_legacy.call_args.args[0].lower())
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "open calculator")
+        self.assertNotIn("calculator jarvis", runner.call_args.args[0].lower())
 
     def test_file_create_write_executes_semantic_file_tool_and_updates_context(self):
         root = Path(__file__).resolve().parent / "_tmp" / "semantic_claim_create"

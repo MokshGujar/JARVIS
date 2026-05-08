@@ -137,10 +137,10 @@ Date: 2026-05-07
 
 ### Destination Modules
 
-- `app/services/automation_file_compatibility.py`: 1,085 LOC, 41 methods.
-- `app/services/automation_app_browser_compatibility.py`: 861 LOC, 35 methods.
-- `app/services/automation_system_compatibility.py`: 250 LOC, 12 methods.
-- `app/services/automation_whatsapp_compatibility.py`: 826 LOC, 31 methods.
+- `app/tools/file_domain_helper.py`: 1,085 LOC, 41 methods.
+- `app/tools/app_browser_domain_helper.py`: 861 LOC, 35 methods.
+- `app/tools/system_domain_helper.py`: 250 LOC, 12 methods.
+- `app/tools/whatsapp_domain_helper.py`: 826 LOC, 31 methods.
 
 ### Methods Moved By Domain
 
@@ -156,8 +156,8 @@ Date: 2026-05-07
 
 ### Retained Blockers
 
-- Domain helper modules are still transitional service-side compatibility helpers. They are smaller by domain, but not yet pure tool/connector ownership.
-- `AutomationService` still inherits domain helpers to preserve public compatibility methods and existing characterization coverage.
+- Domain helper modules are transitional compatibility helpers. They are smaller by domain, but not yet pure parser/connector/adapter ownership.
+- `AutomationService` still used helper inheritance at this checkpoint to preserve public compatibility methods and existing characterization coverage.
 - Next safe step: migrate each domain helper module into the owning Tool/Connector/Adapter and replace inherited private calls with explicit composition.
 
 ### Verification
@@ -166,3 +166,20 @@ Date: 2026-05-07
 - Result: `133 passed, 1 warning, 60 subtests passed in 2.26s`.
 - Full tests directory: `python -m pytest -q tests -p no:cacheprovider`
 - Result: `667 passed, 413 subtests passed in 59.77s`.
+
+## Follow-up: Domain Helper Inheritance Removed
+
+- `AutomationService` no longer inherits the four domain helper classes.
+- The domain helper classes are now composed as explicit helper objects.
+- Final verification after inheritance removal:
+  - Focused command: `135 passed, 1 warning, 60 subtests passed in 2.23s`.
+  - Full `tests/` command with cache disabled: `669 passed, 415 subtests passed in 40.75s`.
+
+## Follow-up: Domain Helpers Promoted Out Of Services
+
+- The domain helper files were promoted out of `app/services/` into `app/tools/`.
+- `AutomationService` no longer owns the large compatibility router body; it delegates to `app/tools/automation_facade_router.py`.
+- `AutomationService` is now 704 LOC / 55 directly defined methods / zero base classes.
+- Remaining blocker: helper composition still exists, and the tool-owned helper modules still need to be split into parser/connector/adapter/tool-native code.
+- Focused promotion suite: `136 passed, 60 subtests passed in 2.07s`.
+

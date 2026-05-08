@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -471,6 +472,26 @@ class ChatService:
             yield text
             self.save_chat_session(session_id)
             logger.info("[JARVIS-STREAM] Research flow complete in %.2fs", time.perf_counter() - t0_jarvis)
+            return
+
+        if (
+            self.automation_service
+            and (
+                self.automation_service.whatsapp_domain._looks_like_whatsapp_command(str(user_message or "").strip().lower())
+                or (
+                    re.search(r"\b(?:gmail|email|mail)\b", str(user_message or ""), flags=re.IGNORECASE)
+                    and re.search(r"\b(?:send|draft|compose|write|reply|search|read|unread)\b", str(user_message or ""), flags=re.IGNORECASE)
+                )
+            )
+        ):
+            yield {"activity": {"event": "routing", "route": "automation"}}
+            yield {"activity": {"event": "tasks_executing", "message": "Running communication action..."}}
+            automation_result = self.automation_service.execute(user_message, session_id=session_id, source="user")
+            text = str(automation_result.get("message", "Done."))
+            self.sessions[session_id][-1].content = text
+            yield {"activity": {"event": "tasks_completed", "message": text}}
+            yield text
+            self.save_chat_session(session_id)
             return
 
         if self.phone_command_service and (

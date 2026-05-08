@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import csv
 import os
 import re
 import time
@@ -11,6 +12,7 @@ from typing import Callable, Dict, Iterable
 from config import BASE_DIR as CONFIG_BASE_DIR
 from app.orchestrator.action_plan import ActionPlan, ActionStep
 from app.orchestrator.tool_executor import ToolExecutor
+from app.tools.automation_domain_helper import ServiceBackedDomainHelper
 from app.services.contact_match_service import ContactCandidate, ContactMatchService
 from app.services.message_action_service import MessageActionService
 from app.tools.base import ToolContext
@@ -26,6 +28,75 @@ except Exception as exc:
 logger = logging.getLogger("J.A.R.V.I.S")
 
 
+SEARCH_EXCLUDED_DIR_NAMES = {
+    "$recycle.bin",
+    ".cache",
+    ".continue",
+    ".git",
+    ".gradle",
+    ".idea",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "appdata",
+    "cache",
+    "caches",
+    "database",
+    "dist",
+    "env",
+    "logs",
+    "model_cache",
+    "models",
+    "node_modules",
+    "pytest-cache-files",
+    "site-packages",
+    "temp",
+    "tmp",
+    "venv",
+}
+
+SEARCH_TEXT_EXTENSIONS = {
+    ".bat",
+    ".cfg",
+    ".csv",
+    ".css",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".log",
+    ".md",
+    ".py",
+    ".ps1",
+    ".toml",
+    ".ts",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+
+READ_TEXT_EXTENSIONS = SEARCH_TEXT_EXTENSIONS | {
+    ".c",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".java",
+    ".kt",
+    ".php",
+    ".rs",
+    ".sh",
+    ".sql",
+}
+
+MAX_FILE_SEARCH_SECONDS = 4.0
+MAX_FILE_SEARCH_SCANNED = 12_000
+MAX_CONTENT_SEARCH_BYTES = 256_000
+
+
 def _runtime_base_dir() -> Path:
     try:
         from app.services import automation_service as automation_module
@@ -36,7 +107,7 @@ def _runtime_base_dir() -> Path:
 
 
 
-class AutomationFileCompatibility:
+class AutomationFileCompatibility(ServiceBackedDomainHelper):
 
     def _sanitize_file_reference(self, path_text: str) -> str:
             cleaned = (path_text or "").strip().strip('"').strip("'")
@@ -418,6 +489,66 @@ class AutomationFileCompatibility:
                 self._last_folder_target = path
             else:
                 self._last_file_target = path
+                self._last_selected_file_path = path
+
+
+    def _resolve_recent_file_selection(self, reference: str) -> Path | None:
+            text = self._sanitize_file_reference(reference).lower()
+            if text in {"it", "that", "this", "that file", "the file"}:
+                selected = getattr(self, "_last_selected_file_path", None) or self._last_file_target
+                return Path(selected) if selected else None
+            index = self._ordinal_to_index(text)
+            results = list(getattr(self, "_last_file_search_results", []) or [])
+            if index == -1:
+                index = len(results) - 1
+            if index is None or index < 0 or index >= len(results):
+                return None
+            path_text = str(dict(results[index]).get("path") or "").strip()
+            if not path_text:
+                return None
+            path = Path(path_text)
+            self._last_selected_file_path = path
+            self._last_file_target = path
+            return path
+
+
+    @staticmethod
+    def _ordinal_to_index(text: str) -> int | None:
+            normalized = re.sub(r"\b(?:the|one|file)\b", " ", str(text or "").lower())
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            mapping = {
+                "first": 0,
+                "1": 0,
+                "second": 1,
+                "2": 1,
+                "third": 2,
+                "3": 2,
+                "fourth": 3,
+                "4": 3,
+                "fifth": 4,
+                "5": 4,
+                "last": -1,
+            }
+            return mapping.get(normalized)
+
+
+    def _show_selected_file_path(self, reference: str = "it") -> Dict[str, object]:
+            path = self._resolve_recent_file_selection(reference)
+            if path is None:
+                return {
+                    "success": False,
+                    "action": "show_file_path",
+                    "status": "clarification_required",
+                    "requires_followup": True,
+                    "message": "Which file should I use?",
+                }
+            return {
+                "success": True,
+                "action": "show_file_path",
+                "message": str(path),
+                "path": str(path),
+                "data": {"path": str(path)},
+            }
 
 
     def _create_file(self, path_text: str, content: str) -> Dict[str, str | bool]:
@@ -543,24 +674,31 @@ class AutomationFileCompatibility:
                 return {"success": False, "action": "read_file", "message": f"{self._display_file_name(path)} does not exist."}
             if not path.is_file():
                 return {"success": False, "action": "read_file", "message": "That is a folder, not a file."}
-            try:
-                if path.stat().st_size > 2_000_000:
-                    return {"success": False, "action": "read_file", "message": "That file is too large to read safely in chat."}
-                content = path.read_text(encoding="utf-8", errors="replace")
-            except Exception as exc:
-                return {"success": False, "action": "read_file", "message": f"Could not read {self._display_file_name(path)}: {exc}"}
+            read_result = self._read_supported_file_content(path, max_chars=max_chars)
+            if not read_result.get("success"):
+                return read_result
+            content = str(read_result.get("content") or "")
 
             self._last_file_target = path
-            if len(content) > max_chars:
-                content = content[:max_chars].rstrip() + f"\n\n... truncated at {max_chars} characters."
+            self._remember_target(path)
             return {
                 "success": True,
                 "action": "read_file",
                 "message": f"{self._display_file_name(path)}:\n{content}" if content else f"{self._display_file_name(path)} is empty.",
+                "path": str(path),
+                "data": {"path": str(path), "content": content, "reader": read_result.get("reader")},
             }
 
 
-    def _find_files(self, query_text: str, folder_text: str = "home", limit: int = 20) -> Dict[str, str | bool]:
+    def _find_files(
+        self,
+        query_text: str,
+        folder_text: str = "home",
+        limit: int = 20,
+        *,
+        recent: bool = False,
+        large: bool = False,
+    ) -> Dict[str, object]:
             try:
                 folder = self._resolve_folder_target(folder_text or "home")
             except ValueError as exc:
@@ -572,6 +710,7 @@ class AutomationFileCompatibility:
                 return {"success": False, "action": "find_files", "message": "That is a file, not a folder."}
 
             query = self._sanitize_file_reference(query_text).lower()
+            query = "" if query == "*" else query
             extension = ""
             extension_aliases = {
                 "pdf": ".pdf",
@@ -597,41 +736,258 @@ class AutomationFileCompatibility:
                 extension = "." + ext_match.group(1)
 
             name_query = re.sub(
-                r"\b(find|files?|all|the|named|called|documents?|pdfs?|images?|photos?|videos?|music|text|notes)\b",
+                r"\b(find|search|look|for|about|my|laptop|computer|pc|files?|all|the|named|called|documents?|pdfs?|images?|photos?|videos?|music|text|notes|recent|recently|modified|latest|newest|large|largest|biggest)\b",
                 " ",
                 query,
             )
             name_query = re.sub(r"\.[a-z0-9]{1,8}\b", " ", name_query)
             name_query = re.sub(r"\s+", " ", name_query).strip()
 
-            pattern = f"*{extension}" if extension else "*"
-            results = []
+            results: list[dict[str, object]] = []
             scanned = 0
+            partial = False
+            started_at = time.monotonic()
             try:
-                for item in folder.rglob(pattern):
-                    scanned += 1
-                    if scanned > 8000:
+                for item in self._iter_search_files(folder):
+                    if time.monotonic() - started_at > MAX_FILE_SEARCH_SECONDS:
+                        partial = True
                         break
-                    if not item.is_file():
+                    scanned += 1
+                    if scanned > MAX_FILE_SEARCH_SCANNED:
+                        partial = True
+                        break
+                    suffix = item.suffix.lower()
+                    if extension and suffix != extension:
                         continue
-                    if name_query and name_query not in item.name.lower():
+                    match_type = ""
+                    lowered_name = item.name.lower()
+                    if name_query and name_query in lowered_name:
+                        match_type = "name"
+                    elif not name_query:
+                        match_type = "name"
+                    elif self._content_matches(item, name_query):
+                        match_type = "content"
+                    else:
                         continue
                     try:
-                        size = self._format_size(item.stat().st_size)
+                        stat = item.stat()
                     except Exception:
-                        size = "unknown size"
-                    results.append(f"{item.name} ({size}) - {item.parent}")
-                    if len(results) >= limit:
+                        continue
+                    results.append(
+                        {
+                            "index": 0,
+                            "name": item.name,
+                            "path": str(item),
+                            "parent": str(item.parent),
+                            "size_bytes": int(stat.st_size),
+                            "size": self._format_size(stat.st_size),
+                            "modified_at": stat.st_mtime,
+                            "match_type": match_type,
+                        }
+                    )
+                    if not recent and not large and len(results) >= limit:
                         break
             except PermissionError:
                 return {"success": False, "action": "find_files", "message": f"Permission denied while searching {folder}."}
             except Exception as exc:
                 return {"success": False, "action": "find_files", "message": f"Could not search {folder}: {exc}"}
 
+            if recent:
+                results.sort(key=lambda item: float(item.get("modified_at") or 0.0), reverse=True)
+            elif large:
+                results.sort(key=lambda item: int(item.get("size_bytes") or 0), reverse=True)
+            results = results[:limit]
+            for index, item in enumerate(results, start=1):
+                item["index"] = index
+
             self._last_folder_target = folder
+            self._last_file_search_results = list(results)
+            if len(results) == 1:
+                self._last_file_target = Path(str(results[0]["path"]))
             if not results:
-                return {"success": True, "action": "find_files", "message": f"No matching files found in {self._display_target_name(folder)}."}
-            return {"success": True, "action": "find_files", "message": "Found files:\n" + "\n".join(results)}
+                suffix = " Search stopped early, so results may be incomplete." if partial else ""
+                return {
+                    "success": True,
+                    "action": "find_files",
+                    "message": f"No matching files found in {self._display_target_name(folder)}.{suffix}",
+                    "data": {"results": [], "folder": str(folder), "query": query_text, "partial": partial, "scanned": scanned},
+                    "partial": partial,
+                }
+            lines = [
+                f"{item['index']}. {item['name']} ({item['size']}, {item['match_type']}) - {item['parent']}"
+                for item in results
+            ]
+            suffix = "\nSearch stopped early, so these are partial results." if partial else ""
+            return {
+                "success": True,
+                "action": "find_files",
+                "message": "Found files:\n" + "\n".join(lines) + suffix,
+                "data": {"results": results, "folder": str(folder), "query": query_text, "partial": partial, "scanned": scanned},
+                "results": results,
+                "partial": partial,
+                "query": query_text,
+            }
+
+
+    def _iter_search_files(self, folder: Path) -> Iterable[Path]:
+            base_dir = _runtime_base_dir().resolve()
+            for root, dirnames, filenames in os.walk(folder):
+                root_path = Path(root)
+                if self._is_search_excluded_path(root_path, base_dir=base_dir):
+                    dirnames[:] = []
+                    continue
+                dirnames[:] = [
+                    name
+                    for name in dirnames
+                    if not self._is_search_excluded_path(root_path / name, base_dir=base_dir)
+                ]
+                for filename in filenames:
+                    path = root_path / filename
+                    if not self._is_search_excluded_path(path, base_dir=base_dir):
+                        yield path
+
+
+    def _is_search_excluded_path(self, path: Path, *, base_dir: Path) -> bool:
+            try:
+                resolved = path.resolve(strict=False)
+            except Exception:
+                resolved = path
+            try:
+                if self._is_protected_path(resolved):
+                    return True
+            except Exception:
+                return True
+            parts = {part.lower() for part in resolved.parts}
+            if parts & SEARCH_EXCLUDED_DIR_NAMES:
+                return True
+            if any(part.startswith("pytest-cache-files") for part in parts):
+                return True
+            runtime_exclusions = (
+                base_dir / "database",
+                base_dir / ".continue",
+                base_dir / ".git",
+                base_dir / ".pytest_cache",
+                base_dir / "node_modules",
+                base_dir / "venv",
+                base_dir / ".venv",
+                base_dir / "tests" / "_tmp",
+            )
+            return any(self._is_relative_to(resolved, excluded) for excluded in runtime_exclusions)
+
+
+    def _content_matches(self, path: Path, query: str) -> bool:
+            if not query or path.suffix.lower() not in SEARCH_TEXT_EXTENSIONS:
+                return False
+            try:
+                if path.stat().st_size > MAX_CONTENT_SEARCH_BYTES:
+                    return False
+                return query in path.read_text(encoding="utf-8", errors="ignore").lower()
+            except Exception:
+                return False
+
+
+    @staticmethod
+    def _is_relative_to(path: Path, root: Path) -> bool:
+            try:
+                path.resolve(strict=False).relative_to(root.resolve(strict=False))
+                return True
+            except Exception:
+                return False
+
+
+    def _read_supported_file_content(self, path: Path, *, max_chars: int) -> Dict[str, object]:
+            try:
+                if path.stat().st_size > 2_000_000:
+                    return {"success": False, "action": "read_file", "message": "That file is too large to read safely in chat."}
+            except Exception as exc:
+                return {"success": False, "action": "read_file", "message": f"Could not inspect {self._display_file_name(path)}: {exc}"}
+
+            suffix = path.suffix.lower()
+            try:
+                if suffix == ".csv":
+                    content = self._preview_csv(path)
+                    reader = "csv"
+                elif suffix == ".pdf":
+                    content = self._read_pdf(path)
+                    reader = "pdf"
+                elif suffix == ".docx":
+                    content = self._read_docx(path)
+                    reader = "docx"
+                elif suffix == ".xlsx":
+                    content = self._preview_xlsx(path)
+                    reader = "xlsx"
+                elif suffix in READ_TEXT_EXTENSIONS or not suffix:
+                    content = path.read_text(encoding="utf-8", errors="replace")
+                    reader = "text"
+                else:
+                    return {
+                        "success": False,
+                        "action": "read_file",
+                        "message": f"{self._display_file_name(path)} has unsupported file type {suffix or 'unknown'}.",
+                        "status": "unsupported_file_type",
+                    }
+            except ImportError as exc:
+                return {
+                    "success": False,
+                    "action": "read_file",
+                    "message": str(exc),
+                    "status": "setup_needed",
+                }
+            except Exception as exc:
+                return {"success": False, "action": "read_file", "message": f"Could not read {self._display_file_name(path)}: {exc}"}
+
+            if len(content) > max_chars:
+                content = content[:max_chars].rstrip() + f"\n\n... truncated at {max_chars} characters."
+            return {"success": True, "content": content, "reader": reader}
+
+
+    def _preview_csv(self, path: Path, *, rows: int = 12) -> str:
+            with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+                reader = csv.reader(handle)
+                lines = []
+                for index, row in enumerate(reader):
+                    if index >= rows:
+                        break
+                    lines.append(", ".join(row))
+            return "\n".join(lines)
+
+
+    def _read_pdf(self, path: Path) -> str:
+            try:
+                from pypdf import PdfReader  # type: ignore
+            except Exception:
+                try:
+                    from PyPDF2 import PdfReader  # type: ignore
+                except Exception as exc:
+                    raise ImportError("PDF reading needs pypdf or PyPDF2 installed.") from exc
+            reader = PdfReader(str(path))
+            pages = []
+            for page in list(reader.pages)[:5]:
+                pages.append(str(page.extract_text() or "").strip())
+            return "\n\n".join(page for page in pages if page)
+
+
+    def _read_docx(self, path: Path) -> str:
+            try:
+                import docx  # type: ignore
+            except Exception as exc:
+                raise ImportError("DOCX reading needs python-docx installed.") from exc
+            document = docx.Document(str(path))
+            return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text)
+
+
+    def _preview_xlsx(self, path: Path, *, rows: int = 12, columns: int = 8) -> str:
+            try:
+                import openpyxl  # type: ignore
+            except Exception as exc:
+                raise ImportError("XLSX reading needs openpyxl installed.") from exc
+            workbook = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+            sheet = workbook.active
+            lines = []
+            for row in sheet.iter_rows(max_row=rows, max_col=columns, values_only=True):
+                lines.append(", ".join("" if value is None else str(value) for value in row))
+            workbook.close()
+            return "\n".join(lines)
 
 
     def _largest_files(self, folder_text: str = "home", limit: int = 10) -> Dict[str, str | bool]:
@@ -1082,4 +1438,5 @@ class AutomationFileCompatibility:
                     return True
 
             return False
+
 

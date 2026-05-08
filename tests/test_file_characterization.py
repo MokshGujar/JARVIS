@@ -3,9 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import app.tools.file_domain_helper as file_domain_module
 from app.services import automation_service as automation_module
 from app.services.automation_service import AutomationService
 from app.services.command_risk_service import CommandRiskService
+from app.orchestrator.intent_router import IntentRouter
 
 
 class FileCharacterizationTests(unittest.TestCase):
@@ -99,6 +101,95 @@ class FileCharacterizationTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["action"], "find_files")
         self.assertIn("resume-final.txt", result["message"])
+
+    def test_local_file_search_phrases_route_to_file_tool(self):
+        router = IntentRouter()
+        cases = {
+            "Can you search a file for me?": {},
+            "search a file": {},
+            "search my laptop for resume": {"query": "resume", "location": "home"},
+            "find resume on my laptop": {"query": "resume", "location": "home"},
+            "search documents for assignment": {"query": "assignment", "location": "documents"},
+            "find recently modified files": {"recent": True, "query": "*"},
+        }
+
+        for command, expected_params in cases.items():
+            with self.subTest(command=command):
+                self.assertTrue(self.service.looks_like_automation_request(command))
+                route = router.route(command)
+                self.assertIsNotNone(route)
+                self.assertEqual(route.tool_name, "file")
+                self.assertEqual(route.operation, "search_files")
+                for key, value in expected_params.items():
+                    self.assertEqual(route.parameters.get(key), value)
+
+    def test_missing_file_search_query_returns_structured_clarification(self):
+        result = self.service.execute("Can you search a file for me?")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["action"], "search_files")
+        self.assertEqual(result["status"], "clarification_required")
+        self.assertEqual(result["clarification_type"], "missing_file_query")
+        self.assertIn("What file name or content", result["message"])
+
+    def test_search_my_laptop_uses_home_with_exclusions(self):
+        (self.root / "visible-resume.txt").write_text("resume", encoding="utf-8")
+        for folder in (self.root / ".git", self.root / "node_modules", self.root / "AppData", self.root / ".venv"):
+            folder.mkdir()
+            (folder / "resume-hidden.txt").write_text("resume", encoding="utf-8")
+
+        result = self.service.execute("search my laptop for resume")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "find_files")
+        names = [item["name"] for item in result["data"]["results"]]
+        self.assertEqual(names, ["visible-resume.txt"])
+        self.assertFalse(result["partial"])
+
+    def test_file_search_returns_partial_when_scan_limit_is_hit(self):
+        (self.root / "alpha.txt").write_text("alpha", encoding="utf-8")
+        (self.root / "beta.txt").write_text("beta", encoding="utf-8")
+
+        with patch.object(file_domain_module, "MAX_FILE_SEARCH_SCANNED", 1):
+            result = self.service.execute("search my laptop for no-such-file")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "find_files")
+        self.assertTrue(result["partial"])
+        self.assertIn("incomplete", result["message"])
+
+    def test_content_search_and_file_selection_followups_use_recent_results(self):
+        first = self.root / "resume-alpha.txt"
+        second = self.root / "resume-beta.txt"
+        first.write_text("first resume", encoding="utf-8")
+        second.write_text("second resume", encoding="utf-8")
+
+        search = self.service.execute("search my laptop for resume")
+        second_path = search["data"]["results"][1]["path"]
+        expected_content = Path(second_path).read_text(encoding="utf-8")
+
+        path_result = self.service.execute("show path of the second one")
+        read_result = self.service.execute("read it")
+
+        self.assertTrue(path_result["success"])
+        self.assertEqual(path_result["path"], second_path)
+        self.assertTrue(read_result["success"])
+        self.assertIn(expected_content, read_result["message"])
+
+    def test_csv_preview_and_unsupported_file_type_fail_gracefully(self):
+        csv_path = self.documents / "sample.csv"
+        bin_path = self.documents / "sample.bin"
+        csv_path.write_text("name,score\nJarvis,10\n", encoding="utf-8")
+        bin_path.write_bytes(b"\x00\x01")
+
+        csv_result = self.service.execute(f"read file {csv_path}")
+        bin_result = self.service.execute(f"read file {bin_path}")
+
+        self.assertTrue(csv_result["success"])
+        self.assertEqual(csv_result["data"]["reader"], "csv")
+        self.assertIn("name, score", csv_result["message"])
+        self.assertFalse(bin_result["success"])
+        self.assertEqual(bin_result["status"], "unsupported_file_type")
 
     def test_rename_move_and_delete_confirmation_flow_uses_recycle_bin(self):
         source = self.desktop / "test.txt"

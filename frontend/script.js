@@ -184,6 +184,7 @@ let thinkingSoundMaxTimer = null;
 let currentThinkingRequestId = null;
 let thinkingAudioPlayedForRequestId = null;
 let thinkingAudioPlaying = false;
+const FACE_GATE_GREETING_SESSION_KEY = 'jarvis_face_gate_greeting_session_id';
 let finalTtsQueuedForRequestId = null;
 let thinkingAudioFinishBeforeFinalTts = true;
 let thinkingAudioStopOnFinalTts = false;
@@ -421,7 +422,9 @@ async function consumeLauncherBootstrapToken() {
         if (res.ok && payload.exchanged && payload.face_session_id) {
             entryGateSessionId = payload.face_session_id;
             localStorage.setItem('jarvis_entry_gate_session_id', entryGateSessionId);
+            console.info('[FACE_GATE] status=verified source=launcher');
             showToast('Entry gate verified.');
+            playFaceGateGreetingOnce(entryGateSessionId).catch(() => {});
         } else {
             entryGateSessionId = '';
             localStorage.removeItem('jarvis_entry_gate_session_id');
@@ -435,6 +438,41 @@ async function consumeLauncherBootstrapToken() {
         url.searchParams.delete('bootstrap_token');
         const clean = `${url.pathname}${url.search}${url.hash}`;
         window.history.replaceState({}, document.title, clean);
+    }
+}
+
+async function playFaceGateGreetingOnce(faceSessionId) {
+    const session = String(faceSessionId || '').trim();
+    if (!session) return;
+    if (sessionStorage.getItem(FACE_GATE_GREETING_SESSION_KEY) === session) return;
+    sessionStorage.setItem(FACE_GATE_GREETING_SESSION_KEY, session);
+    const greeting = 'Welcome back, Moksh. JARVIS is online.';
+    console.info('[GREETING] status=started reason=face_gate_verified');
+    showToast(greeting, 5000);
+    if (!ttsPlayer || !ttsPlayer.enabled) {
+        console.info('[GREETING] status=display_only reason=tts_unavailable');
+        return;
+    }
+    try {
+        const res = await fetch(`${API}/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: greeting }),
+        });
+        if (!res.ok) throw new Error('greeting_tts_failed');
+        const buffer = await res.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        if (binary && ttsPlayer) {
+            ttsPlayer.enqueue(btoa(binary), `greeting-${session}`);
+            console.info('[GREETING] status=tts_queued reason=face_gate_verified');
+        }
+    } catch (_) {
+        console.info('[GREETING] status=display_only reason=tts_error');
     }
 }
 

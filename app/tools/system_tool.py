@@ -6,6 +6,7 @@ from typing import Any
 from app.utils.runtime_observability import log_boundary
 from app.services.command_risk_service import CommandRiskService
 from app.tools.base import BaseTool, ToolContext, ToolRisk, ToolSpec
+from app.tools.compatibility_runners import SystemCompatibilityRunner
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class SystemTool(BaseTool):
     )
 
     def __init__(self, automation_bridge: Any | None = None, *, risk_service: CommandRiskService | None = None) -> None:
-        self.automation_bridge = automation_bridge
+        self.automation_bridge = getattr(automation_bridge, "system_domain", automation_bridge)
         self.risk_service = risk_service or CommandRiskService()
 
     def can_handle(self, intent: str) -> bool:
@@ -53,11 +54,11 @@ class SystemTool(BaseTool):
 
     def execute(self, context: ToolContext) -> dict[str, Any]:
         action_name = str(context.payload.get("action") or context.intent or "legacy_command")
-        if self.automation_bridge and hasattr(self.automation_bridge, "_execute_system_command_legacy"):
-            result = self.automation_bridge._execute_system_command_legacy(context.command)
+        if self.automation_bridge:
+            result = SystemCompatibilityRunner(self.automation_bridge).execute(context.command)
             if isinstance(result, dict):
-                log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="legacy_delegate", status="success" if result.get("success") else "failed", target=context.command)
+                log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="system_compatibility_runner", status="success" if result.get("success") else "failed", target=context.command)
             return result
         result = {"success": False, "action": "unsupported", "message": "System tool is not wired yet."}
-        log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="legacy_delegate", status="failed", target="")
+        log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="system_compatibility_runner", status="failed", target="")
         return result

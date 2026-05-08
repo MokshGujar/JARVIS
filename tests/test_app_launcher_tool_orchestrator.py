@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from app.orchestrator.intent_router import IntentRouter
 from app.orchestrator.main_orchestrator import MainOrchestrator
@@ -51,39 +51,41 @@ class AppLauncherToolOrchestratorTests(unittest.TestCase):
 
     def test_main_orchestrator_selects_app_tool(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {"success": True, "action": "open", "message": "Opening chrome."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([AppTool(bridge), AppLauncherTool(bridge)]), enforce_policy=False)
 
-        result = orchestrator.execute_text("open chrome")
+        with patch("app.tools.compatibility_runners.AppCompatibilityRunner.execute", return_value={"success": True, "action": "open", "message": "Opening chrome."}) as runner:
+            result = orchestrator.execute_text("open chrome")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["selected_tool"], "app")
         self.assertEqual(result["scenario"], "app.open")
-        bridge._execute_app_launcher_command_legacy.assert_called_once_with("open chrome")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "open chrome")
 
-    def test_app_launcher_tool_delegates_to_legacy_launcher(self):
+    def test_app_launcher_tool_delegates_to_app_compatibility_runner(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {"success": True, "action": "open", "message": "Opening notepad."}
         tool = AppLauncherTool(bridge)
 
-        result = tool.execute(ToolContext(command="open notepad", intent="app_open"))
+        with patch("app.tools.compatibility_runners.AppCompatibilityRunner.execute", return_value={"success": True, "action": "open", "message": "Opening notepad."}) as runner:
+            result = tool.execute(ToolContext(command="open notepad", intent="app_open"))
 
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_name"], "app_launcher")
-        bridge._execute_app_launcher_command_legacy.assert_called_once_with("open notepad")
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], "open notepad")
 
     def test_app_close_blocked_without_confirmation(self):
         bridge = Mock()
-        bridge._execute_app_launcher_command_legacy.return_value = {"success": True, "action": "close", "message": "Closing notepad."}
         orchestrator = MainOrchestrator(registry=ToolRegistry([AppTool(bridge)]), enforce_policy=True)
 
-        blocked = orchestrator.execute_text("close notepad")
-        allowed = orchestrator.execute(ToolContext(command="close notepad", confirmation_state={"confirmed": True}))
+        with patch("app.tools.compatibility_runners.AppCompatibilityRunner.execute", return_value={"success": True, "action": "close", "message": "Closing notepad."}) as runner:
+            blocked = orchestrator.execute_text("close notepad")
+            allowed = orchestrator.execute(ToolContext(command="close notepad", confirmation_state={"confirmed": True}))
 
         self.assertEqual(blocked["action"], "confirmation_required")
         self.assertFalse(blocked["requires_face_step_up"])
         self.assertTrue(allowed["success"])
-        self.assertEqual(bridge._execute_app_launcher_command_legacy.call_count, 1)
+        self.assertEqual(runner.call_count, 1)
 
 
 if __name__ == "__main__":

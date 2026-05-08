@@ -75,3 +75,28 @@ Must stay guarded behind tool/policy:
 - Verification after domain split:
   - Focused command: `133 passed, 1 warning, 60 subtests passed in 2.26s`.
   - Full `tests/` command with cache disabled: `667 passed, 413 subtests passed in 59.77s`.
+
+## 2026-05-07 Domain Helper Inheritance Removal
+
+- `AutomationService` now has zero base classes and composes domain helpers explicitly.
+- New guard coverage asserts `AutomationService` does not inherit the file/app-browser/system/WhatsApp compatibility classes.
+- Tests were updated to patch domain helper objects instead of `AutomationService` private helper methods.
+- Verification:
+  - Focused command: `135 passed, 1 warning, 60 subtests passed in 2.23s`.
+  - Full `tests/` command with cache disabled: `669 passed, 415 subtests passed in 40.75s`.
+
+## 2026-05-07 Domain Helper Promotion And Facade Router Extraction
+
+- The transitional domain helper modules were promoted out of `app/services/` and now live under `app/tools/`:
+  - `app/tools/file_domain_helper.py`
+  - `app/tools/app_browser_domain_helper.py`
+  - `app/tools/system_domain_helper.py`
+  - `app/tools/whatsapp_domain_helper.py`
+  - `app/tools/automation_domain_helper.py`
+- New guard coverage asserts the service-side `automation_*_compatibility.py` files and `automation_domain_helper.py` do not return under `app/services/`.
+- `AutomationService` was reduced from 1,533 LOC to 704 LOC and remains at zero base classes.
+- The remaining facade grammar/router body was extracted into `app/tools/automation_facade_router.py`; `AutomationService.execute()` still enters `_execute_facade()` and the router still invokes `MainOrchestrator` plus policy-gated `ToolExecutor` paths.
+- Current blocker: `AutomationService` still composes `file_domain`, `app_browser_domain`, `system_domain`, and `whatsapp_domain`; those helper surfaces are still used by compatibility tests and tool runners.
+- Focused promotion suite result: `136 passed, 1 warning, 60 subtests passed in 2.21s`.
+- Guard/map suite result: `14 passed, 98 subtests passed in 0.17s`.
+- Full `tests/` command with cache disabled: `670 passed, 405 subtests passed in 62.46s`.

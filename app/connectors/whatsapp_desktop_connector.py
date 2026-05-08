@@ -12,6 +12,9 @@ class WhatsAppDesktopConnector:
     def open(self) -> dict[str, Any]:
         return self.automation.open()
 
+    def open_chat(self, phone_number: str, message: str = "") -> dict[str, Any]:
+        return self.automation.open_chat(phone_number, message)
+
     def send_message(self, phone_number: str, message: str) -> dict[str, Any]:
         return self.automation.send_message(phone_number, message)
 
