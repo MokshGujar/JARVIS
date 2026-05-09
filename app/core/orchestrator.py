@@ -25,6 +25,8 @@ class AssistantOrchestrator:
         vision_capability=None,
         wake_on_lan_capability=None,
         memory_capability=None,
+        capability_summary_service=None,
+        notification_center_service=None,
         face_identity_service=None,
         command_risk_service=None,
         step_up_auth_service=None,
@@ -41,6 +43,8 @@ class AssistantOrchestrator:
         self.vision_capability = vision_capability
         self.wake_on_lan_capability = wake_on_lan_capability
         self.memory_capability = memory_capability
+        self.capability_summary_service = capability_summary_service
+        self.notification_center_service = notification_center_service
         self.face_identity_service = face_identity_service
         self.command_risk_service = command_risk_service
         self.step_up_auth_service = step_up_auth_service
@@ -83,6 +87,13 @@ class AssistantOrchestrator:
 
     def execute_fast_route(self, session_id: str, request: AssistantRequest, route) -> tuple[str, dict | None]:
         command_text = request.message
+        intent = (route.intent or "").strip().lower()
+        if intent == "capability_summary" and self.capability_summary_service:
+            return self.capability_summary_service.answer(request.message), None
+        if intent == "notification_center" and self.notification_center_service:
+            result = self.notification_center_service.handle_request(request.message)
+            return str(result.get("message") or "No notifications."), {"notifications": result.get("items", [])}
+
         enforce_step_up = True
         if (route.intent or "").strip().lower() == "automation" and self.automation_capability:
             service = getattr(self.automation_capability, "automation_service", None)
@@ -100,7 +111,6 @@ class AssistantOrchestrator:
         )
         if guard:
             return guard
-        intent = (route.intent or "").strip().lower()
         context = AssistantContext(
             session_id=session_id,
             message=request.message,
@@ -151,6 +161,25 @@ class AssistantOrchestrator:
         self.conversation_service.add_message(context.session_id, "user", context.message)
         self.conversation_service.add_message(context.session_id, "assistant", "")
         yield {"activity": {"event": "query_detected", "message": context.message}}
+
+        if self.capability_summary_service and self.capability_summary_service.looks_like_request(context.message):
+            text = self.capability_summary_service.answer(context.message)
+            self.conversation_service.sessions[context.session_id][-1].content = text
+            yield {"activity": {"event": "routing", "route": "capability_summary"}}
+            yield text
+            self.save_session(context.session_id)
+            return
+
+        if self.notification_center_service and self.notification_center_service.looks_like_request(context.message):
+            result = self.notification_center_service.handle_request(context.message)
+            text = str(result.get("message") or "No notifications.")
+            self.conversation_service.sessions[context.session_id][-1].content = text
+            yield {"activity": {"event": "routing", "route": "notification_center"}}
+            if result.get("items"):
+                yield {"actions": {"notifications": result.get("items")}}
+            yield text
+            self.save_session(context.session_id)
+            return
 
         if self.wake_on_lan_capability and self.wake_on_lan_capability.looks_like_request(context.message):
             yield from self._yield_capability_result(context, self.wake_on_lan_capability.execute(context))

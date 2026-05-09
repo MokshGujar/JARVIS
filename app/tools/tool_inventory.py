@@ -7,6 +7,7 @@ from app.orchestrator.tool_registry import ToolRegistry
 from app.policy.models import RoutingMode, ToolMetadata, ToolRiskLevel, ToolStatus
 from app.tools.base import AutomationTool, BaseTool, ToolContext, ToolResult, ToolRisk, ToolSpec
 from app.tools.app_interaction_tool import AppInteractionTool
+from app.tools.reminder_tool import ReminderTool
 from app.tools.stt_tool import STTTool
 from app.tools.summary_tool import SummaryTool
 
@@ -291,7 +292,7 @@ TOOL_INVENTORY: tuple[ToolInventoryRecord, ...] = (
     _record("tts", "voice", "Text-to-speech output.", supported_intents=("tts", "text_to_speech"), supported_actions=("speak", "synthesize", "stop", "readiness", "thinking_audio"), safety_level="LOW", current_status="metadata_only", target_provider="edge_tts", planned_phase="voice_layer", test_requirements=("no_real_audio_required",)),
     _record("voice_identity", "security", "Voice identity workflow bridge for protected-only authorization.", supported_intents=("voice_identity", "face_identity"), supported_actions=("verify", "enroll_status"), safety_level="LOW", current_status="disabled", legacy_delegate="FaceIdentityService", planned_phase="security_readiness", test_requirements=("auth_mocks",)),
     _record("memory", "memory", "Personal and session memory.", supported_intents=("memory", "recall", "remember"), supported_actions=("remember", "recall", "forget", "context"), safety_level="LOW", current_status="metadata_only", legacy_delegate="PersonalMemoryService", target_repository="memory repository", planned_phase="memory_layer", test_requirements=("session_isolation",)),
-    _record("reminder", "reminder", "Reminder parsing and scheduling.", supported_intents=("reminder", "create_reminder"), supported_actions=("create", "list", "cancel", "update"), safety_level="MEDIUM", current_status="metadata_only", legacy_delegate="ReminderService", planned_phase="memory_layer", test_requirements=("time_mocks",)),
+    _record("reminder", "reminder", "Reminder parsing and scheduling.", supported_intents=("reminder", "create_reminder"), supported_actions=("create", "list", "cancel", "update"), safety_level="MEDIUM", current_status="thin_wrapper", legacy_delegate="ReminderService", target_repository="reminder store", safe_partial_actions=("create", "list"), planned_phase="current", test_requirements=("time_mocks", "tool_executor_policy")),
     _record("task_status", "memory", "Background task status tracking.", supported_intents=("task_status",), supported_actions=("status", "cancel", "list"), safety_level="LOW", current_status="disabled", legacy_delegate="TaskManager", planned_phase="task_layer", test_requirements=("task_mocks",)),
     _record("research", "research", "Search and research workflows.", supported_intents=("research", "realtime_search"), supported_actions=("web_search", "web_fetch", "compare_sources", "answer_with_sources", "summarize_sources"), safety_level="LOW", current_status="metadata_only", legacy_delegate="ResearchToolsService", target_provider="search provider", planned_phase="research_layer", test_requirements=("provider_mocks",)),
     _record("summary", "research", "Summarization over text or tool outputs.", supported_intents=("summary", "summarize"), supported_actions=("summarize", "extract_key_points", "make_notes"), safety_level="LOW", current_status="thin_wrapper", target_adapter="Summarizer provider", safe_partial_actions=("summarize", "extract_key_points", "make_notes"), planned_phase="current", test_requirements=("fake_summarizer", "no_live_provider_required")),
@@ -421,6 +422,8 @@ def build_readiness_tool_registry(live_tools: Iterable[AutomationTool] | None = 
             default_tool = STTTool()
         elif record.name == "app_interaction":
             default_tool = AppInteractionTool()
+        elif record.name == "reminder":
+            default_tool = ReminderTool()
         elif record.current_status == "disabled":
             default_tool = DisabledTool(record)
         else:

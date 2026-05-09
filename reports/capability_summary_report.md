@@ -1,31 +1,50 @@
 # Capability Summary Report
 
-Last validation update: 2026-05-08.
+Phase: 12
 
 ## Status
 
-Deterministic `what can you do?` capability summary was not implemented in this Phases 0-10 run. It remains a deferred Phase 12 item.
+- Deterministic capability summary: implemented.
+- LLM dependency: none.
+- Runtime source of truth: `ToolRegistry`/tool inventory metadata, connector status, feature flags, and runtime service availability.
 
-## Current Capability Truth From This Run
+## Commands Covered
 
-- Local file search: implemented and tested.
-- File read/CSV preview/unsupported graceful failure: implemented and tested.
-- WhatsApp exact-contact direct path: automated-ready with mocks; live readiness is conditional.
-- Gmail: parser/tool shell present, fail-closed as `not_configured`.
-- Face-gate greeting: implemented and tested.
-- Thinking audio: existing contract preserved and tested.
-- LangGraph: not started.
-- Self-created agents: not started.
-- Developer terminal/code mode: not started.
+- `What can you do?`
+- `What tools do you have?`
+- `What is enabled?`
+- `Can you access my laptop?`
+- `Can you send email?`
+- `Can you use WhatsApp?`
+- `Can you run terminal commands?`
 
-## Validation Output
+## Truthful Capability Behavior
 
-```text
-python -m pytest -q tests -p no:cacheprovider
-697 passed, 424 subtests passed in 58.48s
-```
+- Local laptop file search/read is reported as available when the `file` tool is live-routed.
+- App/browser/system capabilities are reported from live-routed tool metadata.
+- Gmail is reported unavailable when `GmailConnector.status()` returns `not_configured`.
+- WhatsApp is reported available only from live tool metadata, with policy protection noted.
+- Terminal execution is reported as proposal-only unless Developer Mode is explicitly enabled.
+- LangGraph agents are reported disabled unless `JARVIS_ENABLE_LANGGRAPH_AGENTS=1`.
+- Developer Mode and Agent Mode default to disabled.
 
-## Deferred
+## Files
 
-Implementing a registry/config-driven answer for `What can you do?` is the recommended next phase before exposing broader agent claims.
+- `app/services/capability_summary_service.py`
+- `app/services/fast_intent_router_service.py`
+- `app/core/orchestrator.py`
+- `app/services/chat_service.py`
+- `app/bootstrap/container.py`
+- `tests/test_capability_summary.py`
 
+## Tests
+
+Planned/added:
+
+- `python -m pytest -q tests/test_capability_summary.py`
+
+## Blockers
+
+- None for deterministic summary.
+- Gmail remains unavailable until OAuth/configuration is implemented.
+- LangGraph, self-created agents, and Developer Mode remain disabled unless later gated phases are started.

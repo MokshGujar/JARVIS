@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from app.policy.models import PolicyDecision, PolicyDecisionType, RoutingMode, ToolMetadata, ToolRiskLevel, ToolStatus
+from app.policy.security_modes import SecurityModeService
 
 
 class PolicyEngine:
@@ -64,6 +65,9 @@ class PolicyEngine:
         "program files (x86)",
     }
     SENSITIVE_FILE_NAMES = {".env", "id_rsa", "id_dsa", "credentials", "credentials.json", "secrets.toml"}
+
+    def __init__(self, security_mode_service: SecurityModeService | None = None) -> None:
+        self.security_mode_service = security_mode_service or SecurityModeService()
 
     def evaluate(
         self,
@@ -196,6 +200,13 @@ class PolicyEngine:
             return False
         source = str(getattr(context, "source", "") or "").strip().lower()
         if source in {"agent", "background", "scheduled", "reminder", "recovered"}:
+            return False
+        mode_decision = self.security_mode_service.communication_decision(
+            exact_recipient=bool(args.get("recipient_confident")),
+            fresh_user_command=bool(args.get("fresh_user_command")),
+            source=source or "user",
+        )
+        if not mode_decision.allowed:
             return False
         return True
 

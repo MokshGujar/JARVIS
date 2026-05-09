@@ -89,6 +89,8 @@ class ChatService:
         phone_command_service: PhoneCommandService = None,
         reminder_service: ReminderService = None,
         research_tools_service: ResearchToolsService = None,
+        capability_summary_service=None,
+        notification_center_service=None,
     ):
         self.groq_service = groq_service
         self.realtime_service = realtime_service
@@ -101,6 +103,8 @@ class ChatService:
         self.phone_command_service = phone_command_service
         self.reminder_service = reminder_service
         self.research_tools_service = research_tools_service
+        self.capability_summary_service = capability_summary_service
+        self.notification_center_service = notification_center_service
 
         self._session_store = ChatSessionStore(CHATS_DATA_DIR, MAX_CHAT_HISTORY_TURNS)
         self.sessions = self._session_store.sessions
@@ -395,6 +399,25 @@ class ChatService:
         chat_history = self.format_history_for_llm(session_id, exclude_last=True)
 
         yield {"activity": {"event": "query_detected", "message": user_message}}
+
+        if self.capability_summary_service and self.capability_summary_service.looks_like_request(user_message):
+            text = self.capability_summary_service.answer(user_message)
+            yield {"activity": {"event": "routing", "route": "capability_summary"}}
+            self.sessions[session_id][-1].content = text
+            yield text
+            self.save_chat_session(session_id)
+            return
+
+        if self.notification_center_service and self.notification_center_service.looks_like_request(user_message):
+            result = self.notification_center_service.handle_request(user_message)
+            text = str(result.get("message") or "No notifications.")
+            yield {"activity": {"event": "routing", "route": "notification_center"}}
+            if result.get("items"):
+                yield {"actions": {"notifications": result.get("items")}}
+            self.sessions[session_id][-1].content = text
+            yield text
+            self.save_chat_session(session_id)
+            return
 
         if self.wake_on_lan_service and self.wake_on_lan_service.looks_like_wake_request(user_message):
             yield {"activity": {"event": "routing", "route": "wake_on_lan"}}

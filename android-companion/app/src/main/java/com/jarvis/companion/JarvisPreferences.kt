@@ -151,6 +151,14 @@ class JarvisPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_BACKGROUND_VOICE_ENABLED, enabled).apply()
     }
 
+    fun isListeningCueEnabled(): Boolean {
+        return prefs.getBoolean(KEY_LISTENING_CUE_ENABLED, false)
+    }
+
+    fun setListeningCueEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LISTENING_CUE_ENABLED, enabled).apply()
+    }
+
     fun isTrustedVoiceEnabled(): Boolean {
         return prefs.getBoolean(KEY_TRUSTED_VOICE_ENABLED, false)
     }
@@ -269,6 +277,7 @@ class JarvisPreferences(context: Context) {
         private const val KEY_HIYA_API_KEY = "hiya_api_key"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
         private const val KEY_BACKGROUND_VOICE_ENABLED = "background_voice_enabled"
+        private const val KEY_LISTENING_CUE_ENABLED = "listening_cue_enabled"
         private const val KEY_TRUSTED_VOICE_ENABLED = "trusted_voice_enabled"
         private const val KEY_TRUSTED_VOICE_PHRASE = "trusted_voice_phrase"
         private const val KEY_TRUSTED_VOICEPRINT = "trusted_voiceprint"

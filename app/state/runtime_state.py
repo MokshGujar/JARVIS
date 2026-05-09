@@ -183,6 +183,112 @@ class RuntimeStateStore:
             connection.commit()
             return int(cursor.lastrowid)
 
+    def add_notification(
+        self,
+        *,
+        notification_type: str,
+        title: str,
+        message: str,
+        status: str = "pending",
+        source: str = "",
+        metadata: dict[str, Any] | None = None,
+        expires_at: float | None = None,
+    ) -> str:
+        self.ensure_schema()
+        notification_id = f"note-{uuid.uuid4().hex}"
+        now = _now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO notifications(
+                    notification_id, notification_type, status, title, message,
+                    source, created_at, updated_at, expires_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    notification_id,
+                    str(notification_type or "").strip(),
+                    str(status or "pending").strip().lower(),
+                    str(title or "").strip(),
+                    str(message or "").strip(),
+                    str(source or "").strip(),
+                    now,
+                    now,
+                    expires_at,
+                    _json(metadata or {}),
+                ),
+            )
+            connection.commit()
+        return notification_id
+
+    def list_notifications(
+        self,
+        *,
+        statuses: list[str] | tuple[str, ...] | None = None,
+        notification_types: list[str] | tuple[str, ...] | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        self.mark_stale_notifications()
+        clauses: list[str] = []
+        values: list[Any] = []
+        if statuses:
+            normalized_statuses = [str(item).strip().lower() for item in statuses if str(item).strip()]
+            if normalized_statuses:
+                clauses.append(f"status IN ({','.join('?' for _ in normalized_statuses)})")
+                values.extend(normalized_statuses)
+        if notification_types:
+            normalized_types = [str(item).strip() for item in notification_types if str(item).strip()]
+            if normalized_types:
+                clauses.append(f"notification_type IN ({','.join('?' for _ in normalized_types)})")
+                values.extend(normalized_types)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        values.append(max(1, int(limit or 50)))
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM notifications
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                values,
+            ).fetchall()
+        return [_row_dict(row) for row in rows]
+
+    def clear_notifications(self, *, statuses: list[str] | tuple[str, ...] | None = None) -> int:
+        self.ensure_schema()
+        normalized_statuses = [str(item).strip().lower() for item in (statuses or ("completed", "cleared", "stale")) if str(item).strip()]
+        if not normalized_statuses:
+            return 0
+        with self.connect() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE notifications
+                SET status='cleared', updated_at=?
+                WHERE status IN ({','.join('?' for _ in normalized_statuses)})
+                """,
+                [_now(), *normalized_statuses],
+            )
+            connection.commit()
+            return int(cursor.rowcount or 0)
+
+    def mark_stale_notifications(self, *, now: float | None = None) -> int:
+        self.ensure_schema()
+        current = time.time() if now is None else float(now)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE notifications
+                SET status='stale', updated_at=?
+                WHERE status='pending' AND expires_at IS NOT NULL AND expires_at <= ?
+                """,
+                (_now(), current),
+            )
+            connection.commit()
+            return int(cursor.rowcount or 0)
+
     def create_pending_confirmation(
         self,
         *,
@@ -371,6 +477,19 @@ class RuntimeStateStore:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE SET NULL,
                 FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                notification_id TEXT PRIMARY KEY,
+                notification_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at REAL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
             );
             """
         )

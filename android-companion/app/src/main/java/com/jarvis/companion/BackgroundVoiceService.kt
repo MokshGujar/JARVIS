@@ -70,7 +70,9 @@ class BackgroundVoiceService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Listening for Jarvis voice commands"))
         registerRecordingWatcher()
-        warmJarvisCueCache()
+        if (prefs.isListeningCueEnabled()) {
+            warmJarvisCueCache()
+        }
         startListeningLoop()
         startPendingActionPolling()
     }
@@ -773,6 +775,10 @@ class BackgroundVoiceService : Service() {
     }
 
     private fun playJarvisCue(text: String, throttleMs: Long) {
+        if (!prefs.isListeningCueEnabled()) {
+            logger.log("Jarvis cue suppressed by listening cue config")
+            return
+        }
         val now = System.currentTimeMillis()
         if (now - lastAckCueAt < throttleMs) {
             return
@@ -840,6 +846,9 @@ class BackgroundVoiceService : Service() {
     }
 
     private fun warmJarvisCueCache() {
+        if (!prefs.isListeningCueEnabled()) {
+            return
+        }
         Thread {
             JARVIS_CUE_PHRASES.forEach { phrase ->
                 if (cueAudioCache.containsKey(phrase)) {

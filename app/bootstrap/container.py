@@ -17,9 +17,11 @@ from app.services.acknowledgement_service import AcknowledgementService, Dynamic
 from app.services.automation_service import AutomationService
 from app.services.brain_service import BrainService
 from app.services.caller_lookup_service import CallerLookupService
+from app.services.capability_summary_service import CapabilitySummaryService
 from app.services.chat_service import ChatService
 from app.services.fast_intent_router_service import FastIntentRouterService
 from app.services.groq_service import GroqService
+from app.services.notification_center_service import NotificationCenterService
 from app.services.interrupt_manager import InterruptManager
 from app.services.personal_memory_service import PersonalMemoryService
 from app.services.phone_command_service import PhoneCommandService
@@ -54,6 +56,8 @@ class AppContainer:
     wake_on_lan_service: WakeOnLanService
     reminder_service: ReminderService
     research_tools_service: ResearchToolsService
+    capability_summary_service: CapabilitySummaryService
+    notification_center_service: NotificationCenterService
     fast_intent_router_service: FastIntentRouterService
     acknowledgement_service: AcknowledgementService
     face_identity_service: FaceIdentityService
@@ -89,6 +93,12 @@ def build_container() -> AppContainer:
     task_executor.automation_service = automation_service
     reminder_service = ReminderService()
     research_tools_service = ResearchToolsService(groq_service=groq_service, realtime_service=realtime_service)
+    capability_summary_service = CapabilitySummaryService(
+        phone_command_service=phone_command_service,
+        reminder_service=reminder_service,
+        research_tools_service=research_tools_service,
+    )
+    notification_center_service = NotificationCenterService(reminder_service=reminder_service)
     acknowledgement_service = AcknowledgementService(DynamicPhraseGenerator())
     interrupt_manager = InterruptManager()
     face_identity_service = FaceIdentityService()
@@ -108,6 +118,8 @@ def build_container() -> AppContainer:
         wake_on_lan_service=wake_on_lan_service,
         reminder_service=reminder_service,
         research_tools_service=research_tools_service,
+        capability_summary_service=capability_summary_service,
+        notification_center_service=notification_center_service,
         brain_service=brain_service,
     )
     task_manager = TaskManager(task_executor=task_executor)
@@ -124,6 +136,8 @@ def build_container() -> AppContainer:
         phone_command_service=phone_command_service,
         reminder_service=reminder_service,
         research_tools_service=research_tools_service,
+        capability_summary_service=capability_summary_service,
+        notification_center_service=notification_center_service,
     )
 
     memory_capability = MemoryCapability(personal_memory_service)
@@ -150,6 +164,8 @@ def build_container() -> AppContainer:
         vision_capability=vision_capability,
         wake_on_lan_capability=wake_on_lan_capability,
         memory_capability=memory_capability,
+        capability_summary_service=capability_summary_service,
+        notification_center_service=notification_center_service,
         face_identity_service=face_identity_service,
         command_risk_service=command_risk_service,
         step_up_auth_service=step_up_auth_service,
@@ -172,6 +188,8 @@ def build_container() -> AppContainer:
         wake_on_lan_service=wake_on_lan_service,
         reminder_service=reminder_service,
         research_tools_service=research_tools_service,
+        capability_summary_service=capability_summary_service,
+        notification_center_service=notification_center_service,
         fast_intent_router_service=fast_intent_router_service,
         acknowledgement_service=acknowledgement_service,
         face_identity_service=face_identity_service,

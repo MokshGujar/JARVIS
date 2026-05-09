@@ -347,6 +347,11 @@ FACE_AUTH_LOCK_SECONDS = _getenv_int("FACE_AUTH_LOCK_SECONDS", 45)
 # Shared secret for the Android companion when posting incoming call events.
 # If set, the phone companion must send it as the X-Jarvis-Token header.
 PHONE_BRIDGE_TOKEN = os.getenv("PHONE_BRIDGE_TOKEN", "").strip()
+JARVIS_PHONE_LISTENING_BEEP = os.getenv("JARVIS_PHONE_LISTENING_BEEP", "0").strip().lower() in {"1", "true", "yes", "on"}
+JARVIS_ENABLE_LANGGRAPH_AGENTS = os.getenv("JARVIS_ENABLE_LANGGRAPH_AGENTS", "0").strip().lower() in {"1", "true", "yes", "on"}
+JARVIS_DEVELOPER_MODE = os.getenv("JARVIS_DEVELOPER_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
+JARVIS_AGENT_MODE = os.getenv("JARVIS_AGENT_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
+JARVIS_SECURITY_MODE = os.getenv("JARVIS_SECURITY_MODE", "trusted").strip().lower() or "trusted"
 AUTOMATION_ENABLED = os.getenv("AUTOMATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SMART_AUTOMATION_ENABLED = os.getenv("SMART_AUTOMATION_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SEMANTIC_PLANNER_ENABLED = os.getenv("SEMANTIC_PLANNER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}

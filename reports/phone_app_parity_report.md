@@ -1,25 +1,35 @@
-# Phone App Parity Report
+# Phone/App Parity Report
 
-Last validation update: 2026-05-08.
+Phase: 11
 
 ## Status
 
-Phone/app parity work beyond Phases 0-10 was not implemented in this run. Existing phone command tests remain green in the full suite.
+- Phone/app parity status: improved for background listening, no-speech contract verification, phone contact resolution, pending phone actions, and notification-silent Android foreground service behavior.
+- No-beep status: Jarvis-generated listening cues are disabled by default on Android and backend config.
+- Exact config default: `JARVIS_PHONE_LISTENING_BEEP=0`.
+- Android default: `JarvisPreferences.isListeningCueEnabled()` reads `listening_cue_enabled` with default `false`.
 
-## Current Notes
+## Implemented
 
-- Unified contact resolution continues to be shared by communication paths.
-- Automated WhatsApp/Gmail tests do not use phone-side real sends/calls.
-- No background-listening beep change was made in this run.
+- Added backend feature defaults for phone listening beep, LangGraph agents, Developer Mode, and Agent Mode.
+- Gated Android local cue warmup/playback behind `isListeningCueEnabled()`.
+- Preserved silent foreground notification behavior with `setSilent(true)`, no channel sound, no vibration.
+- Phone call/message commands now use the unified contact resolver when phone contacts are synced.
+- STT no-speech behavior remains fail-closed: no chat, thinking TTS, final TTS, or interrupt.
 
-## Validation Output
+## Platform Limitation
 
-```text
-python -m pytest -q tests -p no:cacheprovider
-697 passed, 424 subtests passed in 58.48s
-```
+Jarvis code no longer plays passive/background listening cues by default. Android, Google SpeechRecognizer, OEM firmware, or system privacy indicators may still show or produce platform-level microphone indicators/sounds outside Jarvis code.
 
-## Deferred
+## Tests
 
-Phone/app no-beep background listening and broader parity belong to Phase 11 and are deferred by instruction.
+Planned/added:
 
+- `tests/test_phone_app_parity.py`
+- `tests/test_phone_command_service.py`
+- Existing STT/no-speech endpoint tests in `tests/test_stt_transcribe_endpoint.py`
+
+## Blockers
+
+- WhatsApp and Android live runtime still require manual device validation.
+- Platform-forced microphone indicators cannot be suppressed by Jarvis code.

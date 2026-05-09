@@ -66,6 +66,8 @@ class FastIntentRouterService:
         reminder_service=None,
         research_tools_service=None,
         brain_service=None,
+        capability_summary_service=None,
+        notification_center_service=None,
     ) -> None:
         self.phone_command_service = phone_command_service
         self.automation_service = automation_service
@@ -73,6 +75,8 @@ class FastIntentRouterService:
         self.reminder_service = reminder_service
         self.research_tools_service = research_tools_service
         self.brain_service = brain_service
+        self.capability_summary_service = capability_summary_service
+        self.notification_center_service = notification_center_service
 
     def route(self, message: str, *, imgbase64: Optional[str] = None) -> FastIntentRoute:
         start = time.perf_counter()
@@ -88,6 +92,12 @@ class FastIntentRouterService:
 
         if imgbase64:
             return done(self._llm_route(intent="vision", reason="image_input"))
+
+        if self.capability_summary_service and self.capability_summary_service.looks_like_request(text):
+            return done(self._instant_route(intent="capability_summary", confidence=0.98, safe_to_execute=True, reason="capability_summary"))
+
+        if self.notification_center_service and self.notification_center_service.looks_like_request(text):
+            return done(self._instant_route(intent="notification_center", confidence=0.98, safe_to_execute=True, reason="notification_center"))
 
         if self._looks_like_mixed(lowered):
             return done(self._llm_route(intent="mixed", reason="mixed_action_and_question"))

@@ -136,6 +136,44 @@ class PhoneCommandServiceTests(unittest.TestCase):
         self.assertEqual(contacts[0].phone_number, "+919999999999")
         self.assertTrue(contacts[0].favorite)
 
+    def test_phone_call_uses_unified_contact_resolution_when_contacts_are_synced(self):
+        service = self.make_service()
+        service.note_device_seen("pixel-test")
+        service.sync_contacts("pixel-test", [
+            {
+                "contact_id": "h1",
+                "display_name": "Hetanshi India",
+                "phone_number": "+919999999999",
+            }
+        ])
+
+        result = service.route_phone_request("call Hetanshi India on WhatsApp", device_id="pixel-test")
+
+        self.assertTrue(result["success"])
+        pending = service.get_pending_actions("pixel-test")
+        self.assertEqual(pending[0]["contact_name"], "Hetanshi India")
+        self.assertEqual(pending[0]["phone_number"], "+919999999999")
+        self.assertEqual(pending[0]["contact_id"], "h1")
+        self.assertEqual(pending[0]["call_method"], "whatsapp")
+
+    def test_stt_contact_variant_clarifies_before_phone_action(self):
+        service = self.make_service()
+        service.note_device_seen("pixel-test")
+        service.sync_contacts("pixel-test", [
+            {
+                "contact_id": "h1",
+                "display_name": "Hetanshi India",
+                "phone_number": "+919999999999",
+            }
+        ])
+
+        result = service.route_phone_request("call Hitanchi India on WhatsApp", device_id="pixel-test")
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["requires_followup"])
+        self.assertIn("Hetanshi India", result["message"])
+        self.assertEqual(service.get_pending_actions("pixel-test"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

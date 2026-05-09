@@ -37,6 +37,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         },
     },
         "security": {
+            "mode": "trusted",
             "step_up_token_ttl_seconds": 30,
             "confirm_medium_risk": True,
             "confirm_high_risk": True,
@@ -147,6 +148,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
     "features": {
         "vector_store_preload": False,
         "canonical_frontend_actions": False,
+        "langgraph_agents_enabled": False,
+        "developer_mode_enabled": False,
+        "agent_mode_enabled": False,
+    },
+    "phone": {
+        "listening_beep": False,
     },
 }
 

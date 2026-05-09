@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from app.adapters.storage.phone_bridge_repository import FilePhoneBridgeRepository
 from app.core.contracts import PhoneAction
+from app.services.contact_resolution_service import ContactResolutionService
 from app.services.contact_match_service import ContactCandidate
 from app.services.contact_match_service import ContactMatchService
 from app.utils.atomic_io import write_json_atomic
@@ -421,8 +422,26 @@ class PhoneCommandService:
         contact_name: str,
         call_method: str,
         device_id: Optional[str] = None,
+        phone_number: Optional[str] = None,
+        contact_id: Optional[str] = None,
+        match_confidence: Optional[float] = None,
+        match_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         method = "whatsapp" if str(call_method).strip().lower() == "whatsapp" else "normal"
+        resolution = self._resolve_contact_for_channel(
+            contact_name,
+            required_channel="whatsapp" if method == "whatsapp" else "phone",
+            device_id=device_id,
+        )
+        if resolution and not resolution.get("success"):
+            return resolution
+        if resolution:
+            selected = dict(resolution.get("selected_contact") or {})
+            contact_name = str(selected.get("display_name") or contact_name).strip()
+            phone_number = phone_number or str(selected.get("phone_number") or "").strip() or None
+            contact_id = contact_id or str(selected.get("contact_id") or "").strip() or None
+            match_confidence = match_confidence if match_confidence is not None else selected.get("score")
+            match_reason = match_reason or str(selected.get("reason") or "").strip() or None
         message = (
             f"Open WhatsApp call flow for {contact_name}."
             if method == "whatsapp"
@@ -432,8 +451,12 @@ class PhoneCommandService:
             action_type="place_call",
             message=message,
             device_id=device_id,
+            phone_number=phone_number,
             contact_name=contact_name,
             call_method=method,
+            contact_id=contact_id,
+            match_confidence=match_confidence,
+            match_reason=match_reason,
             requires_verified_speaker=True,
             verification_status="required",
         )
@@ -450,6 +473,20 @@ class PhoneCommandService:
         match_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         normalized_channel = "whatsapp" if str(channel).strip().lower() in {"whatsapp", "wa"} else "sms"
+        resolution = self._resolve_contact_for_channel(
+            contact_name,
+            required_channel="whatsapp" if normalized_channel == "whatsapp" else "sms",
+            device_id=device_id,
+        )
+        if resolution and not resolution.get("success"):
+            return resolution
+        if resolution:
+            selected = dict(resolution.get("selected_contact") or {})
+            contact_name = str(selected.get("display_name") or contact_name).strip()
+            phone_number = phone_number or str(selected.get("phone_number") or "").strip() or None
+            contact_id = contact_id or str(selected.get("contact_id") or "").strip() or None
+            match_confidence = match_confidence if match_confidence is not None else selected.get("score")
+            match_reason = match_reason or str(selected.get("reason") or "").strip() or None
         return self._queue_action(
             action_type="draft_message",
             message=(
@@ -468,6 +505,49 @@ class PhoneCommandService:
             requires_verified_speaker=True,
             verification_status="required",
         )
+
+    def _resolve_contact_for_channel(
+        self,
+        contact_name: str,
+        *,
+        required_channel: str,
+        device_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        contacts = self.list_synced_contacts(device_id=device_id)
+        if not contacts:
+            return None
+
+        resolver = ContactResolutionService(
+            contacts_provider=lambda: contacts,
+            contact_match_service=self._contact_match_service,
+        )
+        resolved = resolver.resolve(
+            contact_name,
+            source="phone_bridge",
+            required_channel=required_channel,
+        )
+        status = str(resolved.get("status") or "").strip()
+        if status == "matched":
+            return resolved
+
+        action = "phone_contact_clarification_required"
+        message = str(resolved.get("message") or "").strip()
+        if status == "missing_channel":
+            message = f"I found {contact_name}, but that contact has no phone number."
+            action = "phone_contact_missing_phone"
+        elif status == "not_found":
+            message = f"I couldn't find {contact_name} in your phone contacts. Sync phone contacts or type the phone number."
+        elif not message:
+            message = "Which phone contact did you mean?"
+        return {
+            "success": False,
+            "action": action,
+            "status": "clarification_required" if status in {"weak_match", "ambiguous"} else status,
+            "message": message,
+            "requires_followup": status in {"weak_match", "ambiguous"},
+            "candidates": list(resolved.get("candidates") or []),
+            "selected_contact": dict(resolved.get("selected_contact") or {}),
+        }
 
     def _queue_action(
         self,
