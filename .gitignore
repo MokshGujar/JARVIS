@@ -1,84 +1,59 @@
+﻿
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
-.pytest_cache/
-pytest-cache-files-*/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Environments
 .venv/
 venv/
 env/
-ENV/
 
-# Secrets / local config
+# Environment / secrets
 .env
 *.env
-.env.*
-!.env.example
+config.local.py
+secrets.json
+credentials.json
+token.json
 
-# Logs / temp
+# Logs
 *.log
 logs/
+
+# Database / local runtime data
+database/
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary test files
+tests/_tmp/
 tmp/
 temp/
-*.tmp
-database/*.sqlite
-database/*.sqlite3
-database/*.sqlite3.bak
-*.zip
 
-# Generated config/code shadows
-config/app/
+# VS Code / IDE
+.vscode/
+.idea/
+android-companion/.idea/
 
-# Runtime data and generated artifacts
-database/chats_data/
-database/agent_tasks/
-database/camera_captures/
-database/face_identity/
-database/memory/
-database/observability/
-database/vector_store/
-database/voice_identity/
-database/face_identity/verification_history.jsonl
-database/voice_identity/verification_history.jsonl
-database/**/*.jpg
-database/**/*.jpeg
-database/**/*.png
-database/**/*.wav
-database/**/*.mp3
-
-# Test runtime scratch
-tests/_tmp/
-runtime/
-
-# Models / caches
-.cache/
-models/
-checkpoints/
-*.nemo
-*.pt
-*.pth
-*.onnx
-*.bin
-
-# HuggingFace / NeMo / Torch caches if inside repo
-huggingface/
-models--*/
-.nemo_cache/
-
-# Node/frontend
+# Frontend / Node
 node_modules/
 dist/
 build/
 
-# OS/editor
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Large model / ML files
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+models/
+ollama/
+
+# OS files
 .DS_Store
 Thumbs.db
-.vscode/
-.idea/
