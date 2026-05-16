@@ -1,31 +1,36 @@
 from __future__ import annotations
 
 import logging
-import json
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from app.adapters.storage.phone_contacts_repository import FilePhoneContactsRepository
 from app.adapters.storage.phone_bridge_repository import FilePhoneBridgeRepository
 from app.core.contracts import PhoneAction
 from app.services.contact_resolution_service import ContactResolutionService
 from app.services.contact_match_service import ContactCandidate
 from app.services.contact_match_service import ContactMatchService
-from app.utils.atomic_io import write_json_atomic
 from config import PHONE_BRIDGE_DIR
 
 logger = logging.getLogger("J.A.R.V.I.S")
 
 
 class PhoneCommandService:
-    def __init__(self, repository: Optional[FilePhoneBridgeRepository] = None):
+    def __init__(
+        self,
+        repository: Optional[FilePhoneBridgeRepository] = None,
+        contacts_repository: Optional[FilePhoneContactsRepository] = None,
+    ):
         self._repository = repository or FilePhoneBridgeRepository(
             actions_path=PHONE_BRIDGE_DIR / "pending_actions.json",
             devices_path=PHONE_BRIDGE_DIR / "devices.json",
             ttl_seconds=90,
         )
-        self._contacts_path = PHONE_BRIDGE_DIR / "contacts_snapshot.json"
+        self._contacts_repository = contacts_repository or FilePhoneContactsRepository(
+            contacts_path=PHONE_BRIDGE_DIR / "contacts_snapshot.json",
+        )
         self._pending_call_choice: Dict[str, Any] | None = None
         self._pending_message_choice: Dict[str, Any] | None = None
         self._contact_match_service = ContactMatchService()
@@ -48,93 +53,27 @@ class PhoneCommandService:
 
     @property
     def _contacts_snapshot_path(self):
-        return self._contacts_path
+        return self._contacts_repository.contacts_path
 
     @_contacts_snapshot_path.setter
     def _contacts_snapshot_path(self, value):
-        self._contacts_path = value
+        self._contacts_repository.contacts_path = value
 
     def note_device_seen(self, device_id: str) -> None:
         self._repository.note_device_seen(device_id)
 
     def sync_contacts(self, device_id: str, contacts: List[Dict[str, Any]]) -> Dict[str, Any]:
         device_id = (device_id or "").strip()
-        normalized_contacts: List[Dict[str, Any]] = []
-        seen = set()
-        for raw in contacts or []:
-            if not isinstance(raw, dict):
-                continue
-            display_name = str(raw.get("display_name") or raw.get("displayName") or "").strip()
-            phone_number = str(raw.get("phone_number") or raw.get("phoneNumber") or "").strip()
-            email_address = str(raw.get("email_address") or raw.get("emailAddress") or raw.get("email") or "").strip()
-            contact_id = str(raw.get("contact_id") or raw.get("contactId") or "").strip()
-            if not display_name and not phone_number and not email_address:
-                continue
-            key = (contact_id or phone_number or email_address or display_name).lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            aliases = raw.get("aliases") or []
-            if not isinstance(aliases, list):
-                aliases = []
-            normalized_contacts.append({
-                "contact_id": contact_id,
-                "display_name": display_name or phone_number,
-                "phone_number": phone_number,
-                "email_address": email_address,
-                "aliases": [str(alias).strip() for alias in aliases if str(alias).strip()],
-                "favorite": bool(raw.get("favorite", False)),
-                "recent": bool(raw.get("recent", False)),
-                "frequent": bool(raw.get("frequent", False)),
-            })
-
-        payload = self._load_contacts_snapshot()
-        devices = dict(payload.get("devices") or {})
-        devices[device_id or "default"] = {
-            "device_id": device_id,
-            "contacts": normalized_contacts,
-            "synced_at": time.time(),
-        }
-        write_json_atomic(self._contacts_path, {"devices": devices}, indent=2, ensure_ascii=False)
+        count = self._contacts_repository.sync_contacts(device_id, contacts)
         if device_id:
             self.note_device_seen(device_id)
-        return {"success": True, "action": "sync_contacts", "count": len(normalized_contacts)}
+        return {"success": True, "action": "sync_contacts", "count": count}
 
     def list_synced_contacts(self, device_id: Optional[str] = None) -> List[ContactCandidate]:
-        payload = self._load_contacts_snapshot()
-        devices = dict(payload.get("devices") or {})
-        selected: Dict[str, Any] | None = None
-        if device_id and device_id in devices:
-            selected = devices[device_id]
-        elif devices:
-            selected = max(devices.values(), key=lambda item: float(item.get("synced_at", 0.0)))
-        if not selected:
-            return []
-
-        contacts: List[ContactCandidate] = []
-        for raw in selected.get("contacts") or []:
-            if not isinstance(raw, dict):
-                continue
-            contacts.append(ContactCandidate(
-                contact_id=str(raw.get("contact_id") or ""),
-                display_name=str(raw.get("display_name") or ""),
-                phone_number=str(raw.get("phone_number") or ""),
-                email_address=str(raw.get("email_address") or ""),
-                aliases=list(raw.get("aliases") or []),
-                favorite=bool(raw.get("favorite", False)),
-                recent=bool(raw.get("recent", False)),
-                frequent=bool(raw.get("frequent", False)),
-            ))
-        return contacts
+        return self._contacts_repository.list_contacts(device_id=device_id)
 
     def _load_contacts_snapshot(self) -> Dict[str, Any]:
-        if not self._contacts_path.exists():
-            return {"devices": {}}
-        try:
-            raw = json.loads(self._contacts_path.read_text(encoding="utf-8"))
-            return raw if isinstance(raw, dict) else {"devices": {}}
-        except Exception:
-            return {"devices": {}}
+        return self._contacts_repository._load_snapshot()
 
     def looks_like_answer_request(self, message: str) -> bool:
         text = self._normalize_command_text(message)
