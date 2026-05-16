@@ -1,59 +1,91 @@
 ﻿
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 .venv/
 venv/
 env/
+ENV/
 
 # Environment / secrets
 .env
 *.env
+.env.*
+!.env.example
 config.local.py
 secrets.json
 credentials.json
 token.json
+*.pem
+*.key
 
 # Logs
-*.log
 logs/
+*.log
+*.out
+*.err
 
-# Database / local runtime data
+# Runtime databases / local data
 database/
 *.db
 *.sqlite
 *.sqlite3
 
-# Temporary test files
-tests/_tmp/
+# Android local/build state
+android-companion/.gradle/
+android-companion/local.properties
+android-companion/.idea/
+
+# Temp
 tmp/
 temp/
+tests/_tmp/
+*.tmp
+*.bak
 
-# VS Code / IDE
+# IDE
 .vscode/
 .idea/
-android-companion/.idea/
 
 # Frontend / Node
 node_modules/
 dist/
 build/
+.next/
+out/
 
-# Cache
+# Tooling caches
 .cache/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Large model / ML files
+# ML / model files
+models/
+ollama/
+*.onnx
 *.gguf
 *.bin
 *.safetensors
-*.onnx
-models/
-ollama/
+*.pt
+*.pth
+*.ckpt
+
+# Generated media / captures
+screenshots/
+captures/
+camera_captures/
+*.mp4
+*.avi
+*.mov
+*.wav
+*.mp3
+!frontend/audio/*.mp3
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
