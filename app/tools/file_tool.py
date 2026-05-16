@@ -34,6 +34,8 @@ class FileTool(BaseTool):
             "file",
             "files",
             "local_files",
+            "path",
+            "show_file_path",
             "resolve_path",
             "create_file",
             "write_file",
@@ -160,6 +162,8 @@ class FileTool(BaseTool):
 
         handlers = {
             "resolve_path": self._planned_resolve_path,
+            "path": self._planned_show_file_path,
+            "show_file_path": self._planned_show_file_path,
             "create_file": self._planned_create_file,
             "write_file": self._planned_write_file,
             "append_file": self._planned_append_file,
@@ -186,6 +190,22 @@ class FileTool(BaseTool):
             "success": True,
             "action": "resolve_path",
             "message": f"Resolved {self.automation_bridge._display_target_name(path)}.",
+            "data": {"path": str(path)},
+            "path": str(path),
+        }
+
+    def _planned_show_file_path(self, args: dict[str, Any]) -> dict[str, Any]:
+        reference = str(args.get("reference") or args.get("path") or args.get("path_or_name") or "it").strip()
+        if reference.lower() in {"it", "that", "this", "that file", "the file"} and hasattr(self.automation_bridge, "_show_selected_file_path"):
+            return normalize_automation_response(self.automation_bridge._show_selected_file_path(reference))
+        try:
+            path = self.automation_bridge._resolve_existing_target(reference, target_kind="file")
+        except ValueError as exc:
+            return {"success": False, "action": "show_file_path", "message": str(exc)}
+        return {
+            "success": True,
+            "action": "show_file_path",
+            "message": str(path),
             "data": {"path": str(path)},
             "path": str(path),
         }

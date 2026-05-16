@@ -227,6 +227,22 @@ class AutomationFacadeRouter:
             text = command.strip()
             reference_pattern = r"(?P<ref>it|that|this|that file|the file|the first one|first one|first|1|the second one|second one|second|2|the third one|third one|third|3|the fourth one|fourth one|fourth|4|the fifth one|fifth one|fifth|5|the last one|last one|last)"
 
+            combined_path_read_match = re.match(
+                rf"^(?:show\s+(?:me\s+)?(?:the\s+)?(?:path|full\s+path)\s+(?:of|for)\s+{reference_pattern}\s+and\s+read\s+(?:it|that|this))[.!?]*$",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if combined_path_read_match:
+                return self._show_path_and_read_file(combined_path_read_match.group("ref"))
+
+            possessive_path_read_match = re.match(
+                r"^show\s+(?:me\s+)?(?:its|that\s+file's|the\s+file's)\s+(?:full\s+)?path\s+and\s+read\s+(?:it|that|this)[.!?]*$",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if possessive_path_read_match:
+                return self._show_path_and_read_file("it")
+
             path_match = re.match(
                 rf"^(?:show\s+(?:me\s+)?(?:the\s+)?path\s+(?:of|for)\s+|show\s+(?:me\s+)?(?:the\s+)?full\s+path\s+(?:of|for)\s+|where\s+is\s+){reference_pattern}[.!?]*$",
                 text,
@@ -263,6 +279,23 @@ class AutomationFacadeRouter:
                     "data": {"path": str(path)},
                 }
             return None
+
+    def _show_path_and_read_file(self, reference: str) -> Dict[str, object]:
+            path = self.file_domain._resolve_recent_file_selection(reference)
+            if path is None:
+                return {"success": False, "action": "read_file", "status": "clarification_required", "requires_followup": True, "message": "Which file should I read?"}
+            read_result = self.file_domain._read_file(str(path))
+            if not bool(read_result.get("success")):
+                return read_result
+            data = dict(read_result.get("data") or {})
+            data["path"] = str(path)
+            return {
+                **read_result,
+                "action": "show_file_path_and_read_file",
+                "message": f"{path}\n\n{read_result.get('message') or ''}",
+                "path": str(path),
+                "data": data,
+            }
 
     def _execute_selected_file_summary(self, path: str, command: str) -> Dict[str, object]:
             executor = ToolExecutor(registry=self._build_automation_tool_registry(), enforce_policy=True)

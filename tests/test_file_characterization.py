@@ -176,6 +176,33 @@ class FileCharacterizationTests(unittest.TestCase):
         self.assertTrue(read_result["success"])
         self.assertIn(expected_content, read_result["message"])
 
+    def test_search_result_followups_do_not_fall_back_to_app_open(self):
+        first = self.root / "resume-alpha.txt"
+        second = self.root / "resume-beta.txt"
+        first.write_text("first resume", encoding="utf-8")
+        second.write_text("second resume", encoding="utf-8")
+
+        search = self.service.execute("search my laptop for resume")
+        second_path = search["data"]["results"][1]["path"]
+        expected_content = Path(second_path).read_text(encoding="utf-8")
+
+        with patch.object(self.service.app_browser_domain, "_open_target", wraps=self.service.app_browser_domain._open_target) as open_target:
+            open_result = self.service.execute("open the second one")
+            read_result = self.service.execute("read it")
+            combined_result = self.service.execute("show me its path and read it")
+
+        self.assertTrue(open_result["success"])
+        self.assertEqual(open_result["action"], "select_file")
+        self.assertEqual(open_result["path"], second_path)
+        self.assertTrue(read_result["success"])
+        self.assertIn(expected_content, read_result["message"])
+        self.assertTrue(combined_result["success"])
+        self.assertEqual(combined_result["action"], "show_file_path_and_read_file")
+        self.assertEqual(combined_result["path"], second_path)
+        self.assertIn(second_path, combined_result["message"])
+        self.assertIn(expected_content, combined_result["message"])
+        open_target.assert_not_called()
+
     def test_csv_preview_and_unsupported_file_type_fail_gracefully(self):
         csv_path = self.documents / "sample.csv"
         bin_path = self.documents / "sample.bin"
