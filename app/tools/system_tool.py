@@ -53,7 +53,14 @@ class SystemTool(BaseTool):
         return ToolRisk(level=risk.risk_level, step_up_required=risk.step_up_required, reasons=list(risk.reasons))
 
     def execute(self, context: ToolContext) -> dict[str, Any]:
-        action_name = str(context.payload.get("action") or context.intent or "legacy_command")
+        planned_step = context.payload.get("planned_step") if isinstance(context.payload.get("planned_step"), dict) else {}
+        planned_action = str(context.payload.get("action") or planned_step.get("action") or "").strip()
+        action_name = planned_action or str(context.intent or "legacy_command")
+        if planned_action == "safe_system_info" and self.automation_bridge:
+            result = self._execute_safe_system_info(context.command)
+            if result is not None:
+                log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="native", status="success" if result.get("success") else "failed", target=context.command)
+                return result
         if self.automation_bridge:
             result = SystemCompatibilityRunner(self.automation_bridge).execute(context.command)
             if isinstance(result, dict):
@@ -62,3 +69,13 @@ class SystemTool(BaseTool):
         result = {"success": False, "action": "unsupported", "message": "System tool is not wired yet."}
         log_boundary(logger, "TOOL", name="SystemTool", action=action_name, delegate="system_compatibility_runner", status="failed", target="")
         return result
+
+    def _execute_safe_system_info(self, command: str) -> dict[str, Any] | None:
+        bridge = self.automation_bridge
+        normalized_text = bridge._normalize_spoken_command(command)
+        lowered = normalized_text.lower()
+        if bridge._looks_like_local_system_status(lowered):
+            return bridge.safe_command_info_service.execute("systeminfo")
+        if bridge._looks_like_safe_command_info(lowered):
+            return bridge.safe_command_info_service.execute(normalized_text)
+        return None

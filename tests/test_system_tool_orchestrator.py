@@ -107,20 +107,26 @@ class SystemToolOrchestratorTests(unittest.TestCase):
         for command in ("Show system status", "Give me system updates", "system health"):
             with self.subTest(command=command):
                 bridge = Mock()
+                bridge.system_domain = bridge
+                bridge._normalize_spoken_command.side_effect = lambda value: str(value).strip()
+                bridge._looks_like_local_system_status.return_value = True
+                bridge._looks_like_safe_command_info.return_value = False
+                bridge.safe_command_info_service.execute.return_value = {
+                    "success": True,
+                    "action": "safe_command_info",
+                    "message": "System OK",
+                }
                 orchestrator = MainOrchestrator(registry=ToolRegistry([SystemTool(bridge)]), enforce_policy=True)
 
-                with patch(
-                    "app.tools.compatibility_runners.SystemCompatibilityRunner.execute",
-                    return_value={"success": True, "action": "safe_command_info", "message": "System OK"},
-                ) as runner:
+                with patch("app.tools.compatibility_runners.SystemCompatibilityRunner.execute") as runner:
                     result = orchestrator.execute_text(command)
 
                 self.assertTrue(result["success"])
                 self.assertEqual(result["selected_tool"], "system")
                 self.assertEqual(result["scenario"], "system.safe_system_info")
                 self.assertEqual(result["policy"]["safety_level"], "LOW")
-                runner.assert_called_once()
-                self.assertEqual(runner.call_args.args[0], command)
+                runner.assert_not_called()
+                bridge.safe_command_info_service.execute.assert_called_once_with("systeminfo")
 
     def test_lock_system_is_blocked_without_confirmation(self):
         bridge = Mock()
