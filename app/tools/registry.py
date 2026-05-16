@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
 
-from app.policy.models import RoutingMode, ToolMetadata, ToolRiskLevel, ToolStatus
+from app.policy.models import RoutingMode, ToolMetadata, ToolStatus
 from app.utils.runtime_observability import log_boundary
 from app.tools.base import AutomationTool
 
@@ -91,55 +90,4 @@ class ToolRegistry:
             pass
 
         spec = getattr(tool, "spec", None)
-        category = str(getattr(spec, "category", "automation") or "automation")
-        status = _coerce_tool_status(getattr(spec, "status", "LIVE"))
-        routing_mode = _coerce_routing_mode(getattr(spec, "routing_mode", "ACTIVE"))
-        risk_level = _coerce_risk_level(getattr(spec, "safety_level", "LOW"))
-        allowed_actions = _coerce_string_iterable(getattr(spec, "allowed_actions", []))
-        safe_partial_actions = _coerce_string_iterable(getattr(spec, "safe_partial_actions", []))
-        return ToolMetadata(
-            name=name,
-            category=category,
-            status=status,
-            routing_mode=routing_mode,
-            risk_level=risk_level,
-            requires_confirmation=bool(getattr(spec, "requires_confirmation", False)),
-            requires_step_up=bool(getattr(spec, "requires_step_up", False) or getattr(spec, "requires_face_step_up", False)),
-            supports_dry_run=bool(getattr(spec, "supports_dry_run", False)),
-            adapter_provider=getattr(spec, "adapter_provider", None),
-            allowed_actions=allowed_actions,
-            safe_partial_actions=safe_partial_actions,
-        )
-
-
-def _coerce_tool_status(value: object) -> ToolStatus:
-    normalized = str(value or "").strip().upper()
-    if normalized in ToolStatus.__members__:
-        return ToolStatus[normalized]
-    if normalized in {item.value for item in ToolStatus}:
-        return ToolStatus(normalized)
-    return ToolStatus.LIVE
-
-
-def _coerce_routing_mode(value: object) -> RoutingMode:
-    normalized = str(value or "").strip().upper()
-    if normalized in RoutingMode.__members__:
-        return RoutingMode[normalized]
-    if normalized in {item.value for item in RoutingMode}:
-        return RoutingMode(normalized)
-    return RoutingMode.ACTIVE
-
-
-def _coerce_risk_level(value: object) -> ToolRiskLevel:
-    normalized = str(value or "").strip().upper().replace("_RISK", "")
-    if normalized in ToolRiskLevel.__members__:
-        return ToolRiskLevel[normalized]
-    if normalized in {item.value for item in ToolRiskLevel}:
-        return ToolRiskLevel(normalized)
-    return ToolRiskLevel.LOW
-
-
-def _coerce_string_iterable(value: object) -> tuple[str, ...]:
-    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-        return ()
-    return tuple(str(item).strip().lower() for item in value if str(item).strip())
+        return ToolMetadata.from_tool_spec(name=name, spec=spec)

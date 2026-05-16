@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Iterable
 from typing import Any
 
 
@@ -63,6 +64,14 @@ class PolicyDecision:
 
 @dataclass(frozen=True, slots=True)
 class ToolMetadata:
+    """Canonical executable tool metadata consumed by policy enforcement.
+
+    `requires_step_up` means the protected-action permission gate used by the
+    executor. It is intentionally separate from launcher Face Gate state.
+    Older tool specs may still expose `requires_face_step_up`; conversion keeps
+    that as compatibility input without changing current policy defaults.
+    """
+
     name: str
     category: str
     status: ToolStatus
@@ -74,6 +83,56 @@ class ToolMetadata:
     adapter_provider: str | None = None
     allowed_actions: tuple[str, ...] = field(default_factory=tuple)
     safe_partial_actions: tuple[str, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_values(
+        cls,
+        *,
+        name: str,
+        category: str = "automation",
+        status: object = ToolStatus.LIVE,
+        routing_mode: object = RoutingMode.ACTIVE,
+        risk_level: object = ToolRiskLevel.LOW,
+        requires_confirmation: bool = False,
+        requires_step_up: bool = False,
+        supports_dry_run: bool = False,
+        adapter_provider: str | None = None,
+        allowed_actions: object = (),
+        safe_partial_actions: object = (),
+    ) -> "ToolMetadata":
+        return cls(
+            name=str(name or "").strip(),
+            category=str(category or "automation"),
+            status=_coerce_tool_status(status),
+            routing_mode=_coerce_routing_mode(routing_mode),
+            risk_level=_coerce_risk_level(risk_level),
+            requires_confirmation=bool(requires_confirmation),
+            requires_step_up=bool(requires_step_up),
+            supports_dry_run=bool(supports_dry_run),
+            adapter_provider=adapter_provider,
+            allowed_actions=_coerce_string_iterable(allowed_actions),
+            safe_partial_actions=_coerce_string_iterable(safe_partial_actions),
+        )
+
+    @classmethod
+    def from_tool_spec(cls, *, name: str, spec: Any) -> "ToolMetadata":
+        requires_step_up = bool(
+            getattr(spec, "requires_step_up", False)
+            or getattr(spec, "requires_face_step_up", False)
+        )
+        return cls.from_values(
+            name=name,
+            category=getattr(spec, "category", "automation"),
+            status=getattr(spec, "status", ToolStatus.LIVE),
+            routing_mode=getattr(spec, "routing_mode", RoutingMode.ACTIVE),
+            risk_level=getattr(spec, "safety_level", ToolRiskLevel.LOW),
+            requires_confirmation=bool(getattr(spec, "requires_confirmation", False)),
+            requires_step_up=requires_step_up,
+            supports_dry_run=bool(getattr(spec, "supports_dry_run", False)),
+            adapter_provider=getattr(spec, "adapter_provider", None),
+            allowed_actions=getattr(spec, "allowed_actions", ()),
+            safe_partial_actions=getattr(spec, "safe_partial_actions", ()),
+        )
 
     def allows_execution(self, action: str) -> bool:
         normalized_action = _normalize_action(action)
@@ -153,3 +212,42 @@ class ExecutionResult:
 
 def _normalize_action(action: str) -> str:
     return str(action or "").strip().lower()
+
+
+def _coerce_tool_status(value: object) -> ToolStatus:
+    if isinstance(value, ToolStatus):
+        return value
+    normalized = str(value or "").strip().upper()
+    if normalized in ToolStatus.__members__:
+        return ToolStatus[normalized]
+    if normalized in {item.value for item in ToolStatus}:
+        return ToolStatus(normalized)
+    return ToolStatus.LIVE
+
+
+def _coerce_routing_mode(value: object) -> RoutingMode:
+    if isinstance(value, RoutingMode):
+        return value
+    normalized = str(value or "").strip().upper()
+    if normalized in RoutingMode.__members__:
+        return RoutingMode[normalized]
+    if normalized in {item.value for item in RoutingMode}:
+        return RoutingMode(normalized)
+    return RoutingMode.ACTIVE
+
+
+def _coerce_risk_level(value: object) -> ToolRiskLevel:
+    if isinstance(value, ToolRiskLevel):
+        return value
+    normalized = str(value or "").strip().upper().replace("_RISK", "")
+    if normalized in ToolRiskLevel.__members__:
+        return ToolRiskLevel[normalized]
+    if normalized in {item.value for item in ToolRiskLevel}:
+        return ToolRiskLevel(normalized)
+    return ToolRiskLevel.LOW
+
+
+def _coerce_string_iterable(value: object) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        return ()
+    return tuple(str(item).strip().lower() for item in value if str(item).strip())

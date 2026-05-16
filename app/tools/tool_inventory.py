@@ -112,18 +112,18 @@ class ToolInventoryRecord:
         return self.target_adapter or self.target_provider or self.target_connector or self.legacy_delegate
 
     def as_tool_metadata(self) -> ToolMetadata:
-        return ToolMetadata(
+        return ToolMetadata.from_values(
             name=self.name,
             category=self.category,
-            status=ToolStatus(self.status),
-            routing_mode=RoutingMode(self.routing_mode),
-            risk_level=ToolRiskLevel(self.safety_level),
+            status=self.status,
+            routing_mode=self.routing_mode,
+            risk_level=self.safety_level,
             requires_confirmation=self.requires_confirmation,
             requires_step_up=self.requires_face_step_up,
             supports_dry_run=self.supports_dry_run,
             adapter_provider=self.adapter_provider,
-            allowed_actions=tuple(self.supported_actions),
-            safe_partial_actions=tuple(self.safe_partial_actions),
+            allowed_actions=self.supported_actions,
+            safe_partial_actions=self.safe_partial_actions,
         )
 
 

@@ -10,6 +10,13 @@ ToolRiskLevel = str
 
 @dataclass(slots=True)
 class ToolSpec:
+    """Backward-compatible tool declaration used by concrete tools.
+
+    `requires_step_up` is the protected execution permission consumed by
+    policy metadata. `requires_face_step_up` is retained for older callers and
+    remains distinct from launcher Face Gate sessions.
+    """
+
     name: str
     description: str = ""
     category: str = "automation"
